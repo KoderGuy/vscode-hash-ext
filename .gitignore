@@ -1,6 +1,7 @@
 node_modules/
 out/
 qa/algorithms.cjs
-qa/.staging-baseline/
+qa/embedded-data.mjs
+qa/.staging-qa/
 *.vsix
 .DS_Store

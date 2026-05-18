@@ -81,9 +81,9 @@
     "build": "node esbuild.mjs",
     "build:test": "node esbuild.mjs --test",
     "watch": "node esbuild.mjs --watch",
-    "gen:baseline": "npm run build:test && node qa/gen-baseline.mjs",
-    "baseline:promote": "node qa/promote-baseline.mjs",
-    "qa": "npm run build:test && node qa/qa.mjs",
+    "gen:qa": "npm run build:test && node esbuild.mjs --qa",
+    "qa:promote": "node qa/promote-qa.mjs",
+    "qa": "npm run build:test && node qa/run-qa.mjs",
     "vscode:prepublish": "npm run check && npm run build",
     "package": "npm run qa && vsce package --allow-missing-repository --no-rewrite-relative-links"
   },

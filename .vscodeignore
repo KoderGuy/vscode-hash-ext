@@ -1,6 +1,7 @@
 src/**
 scripts/**
 qa/**
+qa-dist/**
 baseline/**
 esbuild.mjs
 tsconfig.json
