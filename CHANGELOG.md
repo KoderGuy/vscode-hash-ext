@@ -32,6 +32,12 @@ Initial release.
   so results cannot be externally influenced. KAT-validated oracle, baseline-
   integrity guard, component certification, transcoder round-trips; verbose
   per-test stdout; non-zero exit on any failure.
+- QA **never stops mid-run**: oracle/baseline failures are WARNINGs (not
+  aborts) and every thrown call (computeDigest/oracle/transcoder) is caught
+  and recorded — all 6 sections always execute. New **coverage/gap-analysis**
+  section itemizes UNTESTED / MISSING / BROKEN / covered per algorithm. The
+  SUMMARY ends with a consolidated **TO-DO list of every failure**, so one
+  run fully defines the required work.
 - The control declares its OWN algorithm set + inputs in audited committed
   data (`baseline/algorithms.json`, `baseline/test-strings.json`); `gen:qa`
   builds from those + the crypto oracle only — no `src/`/`out/` read, no

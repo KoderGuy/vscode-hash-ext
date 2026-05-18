@@ -155,21 +155,31 @@ refuses to run an uncommitted package.
 
 ### QA flow (inside the committed package)
 
+It **never stops mid-run**. Every section always executes; oracle/baseline
+problems become WARNINGs (not aborts) and any thrown call is caught and
+recorded as a FAIL — so one run yields the *complete* defect list.
+
 1. **Oracle** — validate Node `crypto` against ~20 **published** KAT vectors
-   (NIST/RFC/SM3); abort if untrustworthy.
+   (NIST/RFC/SM3); failures → WARNING (results flagged suspect, run continues).
 2. **Baseline integrity** — assert the embedded baseline matches the
-   canonical strings, exactly covers the algorithm registry, and re-derives
-   byte-for-byte from the oracle (tampered data / forked OpenSSL → abort).
-3. **Certify the component** — the supplied `algorithms.js`’s
+   canonical strings and re-derives byte-for-byte from the oracle
+   (tampered data / forked OpenSSL → WARNING, run continues).
+3. **Algorithm coverage (gap analysis)** — per algorithm, itemize
+   **UNTESTED** (code exposes it, control has no test), **MISSING** (control
+   tests it, code dropped/renamed it), **BROKEN** (`computeDigest`
+   throws/empty), or **covered**.
+4. **Certify the component** — the supplied `algorithms.js`’s
    `computeDigest()` must equal the embedded baseline `hex` and `base64` for
    every string × algorithm, plus base64url/uppercase spot-checks.
-4. **Transcoders** — round-trip + independent-oracle check on the frozen
+5. **Transcoders** — round-trip + independent-oracle check on the frozen
    strings plus a seeded random corpus subset (`QA_FULL=1` whole corpus;
-   `QA_SEED=<n>` to reproduce), and decoders must reject malformed input.
+   `QA_SEED=<n>` to reproduce).
+6. **Decoder rejects malformed input** — bad Base64/Hex/URL must throw.
 
-Every assertion prints to stdout (`PASS`/`FAIL`, expected, got, and a
-first-difference diff on mismatch). `QA_QUIET=1` collapses passing lines but
-always prints failures. Non-zero exit on any failure.
+Every assertion prints to stdout (`PASS`/`FAIL`, expected, got, first-
+difference diff). The `SUMMARY` ends with a consolidated **TO-DO list of
+every failure** (a complete work list). `QA_QUIET=1` collapses passing lines
+but always prints failures. Exit non-zero if anything failed.
 
 ## Install the .vsix (Cursor / Antigravity / VSCode)
 
