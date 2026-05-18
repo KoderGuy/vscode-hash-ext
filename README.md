@@ -95,54 +95,65 @@ Press **F5** in VSCode to launch the Extension Development Host for debugging.
 
 ## QA harness
 
-`npm run qa` is a standalone test bundle that is **never shipped in the
-`.vsix`** and runs automatically before `npm run package` (a failing QA
-aborts packaging). Its hash check is anchored to a **frozen baseline dataset
-that QA reads ONLY from the committed `/baseline` folder** (via
-`git show HEAD:`) — uncommitted, staged, or working-tree baseline data is
-never used to test.
+The QA test is **one single, all-inclusive committed file**:
+`qa-dist/qa.pkg.mjs`. esbuild bundles the oracle-computed baseline dataset
+*and* the JS test harness together into that one artifact. `npm run qa`
+executes **only the committed package** — it is **never rebuilt by
+`npm run qa`/`npm run package`** — and the package is **never shipped in the
+`.vsix`**. Packaging is gated: a failing QA aborts the build.
 
-### The `/baseline` folder (committed source of truth)
+### The single committed QA package
 
-- **`baseline/test-strings.json`** — the canonical 7 frozen test strings
-  (alpha lower / UPPER / mixed-case sharing the same letters; +numeric;
-  +safe symbols; +extended symbols). Never change a value once committed.
-- **`baseline/baseline.json`** — the permanent dataset: every string × all
-  16 algorithms × `{hex, base64}` (224 values), computed by Node `crypto`
-  directly (the oracle, independent of the extension code).
+- **`qa-dist/qa.pkg.mjs`** — the frozen test: embedded baseline (7 strings ×
+  16 algorithms × `{hex, base64}` = 224 oracle-computed values) + the test
+  harness, as one tracked file. This is the only thing QA runs.
+- **`qa/run-qa.mjs`** — a tiny committed launcher: reads `qa-dist/qa.pkg.mjs`
+  as committed at `git HEAD` and executes exactly those bytes (from a temp
+  file). An uncommitted / staged / working-tree-modified package is **never
+  executed** — it aborts (FATAL) if the package isn't committed, and ignores
+  working-tree edits in favor of the committed bytes.
+- **`baseline/test-strings.json`** — the canonical 7 frozen input strings
+  (the authored source the dataset is generated from). Never change a value
+  without regenerating + revalidating + recommitting the package.
 
-### Regenerating the baseline (deliberate, independent steps)
+### Code under test is always fresh
 
-No `npm` command regenerates the baseline as a side effect. The only way to
-produce a new one:
+Only the *harness* is frozen. The extension's production functions
+(`qa/algorithms.cjs`, gitignored) are **rebuilt every run** by
+`npm run build:test`, so the frozen package always validates the **current**
+extension code against the immutable embedded baseline.
+
+### Rebuilding the QA package (deliberate, revalidated, never automatic)
+
+No `npm` command rebuilds the test as a side effect. Rebuild only when the
+test logic or inputs must change:
 
 ```bash
-# 1. (optional) edit baseline/test-strings.json
-npm run gen:baseline       # writes a CANDIDATE to gitignored qa/.staging-baseline/
-                           #   — does NOT touch /baseline, NOT read by QA
-# 2. review the candidate
-npm run baseline:promote   # copies the candidate over /baseline/baseline.json
-git add baseline && git commit -m "update QA baseline"   # REQUIRED
+# 1. (optional) edit baseline/test-strings.json or the qa/ harness sources
+npm run gen:qa        # builds code-under-test, recomputes the baseline via the
+                      #   oracle, bundles data+harness -> gitignored
+                      #   qa/.staging-qa/qa.pkg.mjs  (NOT used by QA)
+# 2. review AND revalidate the staging candidate
+npm run qa:promote    # copies it over qa-dist/qa.pkg.mjs
+git add qa-dist && git commit -m "update QA package"   # REQUIRED
 ```
 
-QA refuses to run until `/baseline` is committed — so an unreviewed or
-unpromoted candidate can never be tested against.
+A rebuilt package is not trusted until a human revalidates and commits it —
+QA refuses to run an uncommitted package.
 
-### QA flow
+### QA flow (inside the committed package)
 
-1. **Committed-only load** — read `/baseline/*` from `git HEAD`; abort if not
-   committed (or not a git repo).
-2. **Oracle** — validate Node `crypto` against ~20 **published** KAT vectors
+1. **Oracle** — validate Node `crypto` against ~20 **published** KAT vectors
    (NIST/RFC/SM3); abort if untrustworthy.
-3. **Baseline integrity** — assert the committed baseline still matches the
+2. **Baseline integrity** — assert the embedded baseline matches the
    canonical strings, exactly covers the production algorithm registry, and
-   re-derives byte-for-byte from the oracle (catches a tampered/stale
-   baseline or a forked OpenSSL → abort).
-4. **Extension vs baseline** — the core test: the **production**
+   re-derives byte-for-byte from the oracle (catches a tampered embedded
+   dataset or a forked OpenSSL → abort).
+3. **Extension vs baseline** — the core test: the **production**
    `computeDigest()` (the exact function the extension uses) must equal the
-   committed baseline `hex` and `base64` for every string × algorithm, plus
+   embedded baseline `hex` and `base64` for every string × algorithm, plus
    base64url/uppercase encoding-path spot-checks vs the oracle.
-5. **Transcoders** — round-trip + independent-oracle check on the frozen
+4. **Transcoders** — round-trip + independent-oracle check on the frozen
    strings plus a seeded random corpus subset (`QA_FULL=1` whole corpus;
    `QA_SEED=<n>` to reproduce), and decoders must reject malformed input.
 
