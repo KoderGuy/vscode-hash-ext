@@ -1,0 +1,12 @@
+src/**
+scripts/**
+qa/**
+baseline/**
+esbuild.mjs
+tsconfig.json
+.gitignore
+.vscode/**
+**/*.map
+**/.DS_Store
+node_modules/**
+*.vsix

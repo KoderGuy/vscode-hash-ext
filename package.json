@@ -1,0 +1,97 @@
+{
+  "name": "vscode-hash-ext",
+  "displayName": "Hash & Transcode to Clipboard",
+  "description": "Hash the selected text (16 algorithms incl. SHA-2/SHA-3/BLAKE2 + legacy SHA-1/MD5) or transcode it (Base64, Base64URL, URL, Hex, HTML entities) and copy the result to the clipboard. Every operation is its own bindable command. Works in VSCode, Cursor, and Antigravity.",
+  "version": "0.0.1",
+  "publisher": "local",
+  "license": "MIT",
+  "engines": {
+    "vscode": "^1.74.0"
+  },
+  "categories": ["Other"],
+  "keywords": ["hash", "sha256", "sha3", "blake2", "md5", "base64", "clipboard", "transcode"],
+  "main": "./out/extension.js",
+  "activationEvents": [],
+  "contributes": {
+    "commands": [
+      { "command": "hashToClipboard.pick", "category": "Hash & Transcode", "title": "Hash: Pick Algorithm → Clipboard" },
+      { "command": "hashToClipboard.sha256", "category": "Hash & Transcode", "title": "Hash Selection: SHA-256 → Clipboard" },
+      { "command": "hashToClipboard.sha384", "category": "Hash & Transcode", "title": "Hash Selection: SHA-384 → Clipboard" },
+      { "command": "hashToClipboard.sha512", "category": "Hash & Transcode", "title": "Hash Selection: SHA-512 → Clipboard" },
+      { "command": "hashToClipboard.sha512_256", "category": "Hash & Transcode", "title": "Hash Selection: SHA-512/256 → Clipboard" },
+      { "command": "hashToClipboard.sha3_224", "category": "Hash & Transcode", "title": "Hash Selection: SHA3-224 → Clipboard" },
+      { "command": "hashToClipboard.sha3_256", "category": "Hash & Transcode", "title": "Hash Selection: SHA3-256 → Clipboard" },
+      { "command": "hashToClipboard.sha3_384", "category": "Hash & Transcode", "title": "Hash Selection: SHA3-384 → Clipboard" },
+      { "command": "hashToClipboard.sha3_512", "category": "Hash & Transcode", "title": "Hash Selection: SHA3-512 → Clipboard" },
+      { "command": "hashToClipboard.blake2b512", "category": "Hash & Transcode", "title": "Hash Selection: BLAKE2b-512 → Clipboard" },
+      { "command": "hashToClipboard.blake2s256", "category": "Hash & Transcode", "title": "Hash Selection: BLAKE2s-256 → Clipboard" },
+      { "command": "hashToClipboard.sha224", "category": "Hash & Transcode", "title": "Hash Selection: SHA-224 → Clipboard" },
+      { "command": "hashToClipboard.sha512_224", "category": "Hash & Transcode", "title": "Hash Selection: SHA-512/224 → Clipboard" },
+      { "command": "hashToClipboard.ripemd160", "category": "Hash & Transcode", "title": "Hash Selection: RIPEMD-160 → Clipboard" },
+      { "command": "hashToClipboard.sm3", "category": "Hash & Transcode", "title": "Hash Selection: SM3 → Clipboard" },
+      { "command": "hashToClipboard.sha1", "category": "Hash & Transcode", "title": "Hash Selection: SHA-1 (insecure) → Clipboard" },
+      { "command": "hashToClipboard.md5", "category": "Hash & Transcode", "title": "Hash Selection: MD5 (insecure) → Clipboard" },
+      { "command": "transcode.pickEncode", "category": "Hash & Transcode", "title": "Encode: Pick Format → Clipboard" },
+      { "command": "transcode.pickDecode", "category": "Hash & Transcode", "title": "Decode: Pick Format → Clipboard" },
+      { "command": "transcode.base64Encode", "category": "Hash & Transcode", "title": "Encode: Base64 → Clipboard" },
+      { "command": "transcode.base64Decode", "category": "Hash & Transcode", "title": "Decode: Base64 → Clipboard" },
+      { "command": "transcode.base64urlEncode", "category": "Hash & Transcode", "title": "Encode: Base64URL → Clipboard" },
+      { "command": "transcode.base64urlDecode", "category": "Hash & Transcode", "title": "Decode: Base64URL → Clipboard" },
+      { "command": "transcode.urlEncode", "category": "Hash & Transcode", "title": "Encode: URL (percent) → Clipboard" },
+      { "command": "transcode.urlDecode", "category": "Hash & Transcode", "title": "Decode: URL (percent) → Clipboard" },
+      { "command": "transcode.hexEncode", "category": "Hash & Transcode", "title": "Encode: Hex → Clipboard" },
+      { "command": "transcode.hexDecode", "category": "Hash & Transcode", "title": "Decode: Hex → Clipboard" },
+      { "command": "transcode.htmlEncode", "category": "Hash & Transcode", "title": "Encode: HTML Entities → Clipboard" },
+      { "command": "transcode.htmlDecode", "category": "Hash & Transcode", "title": "Decode: HTML Entities → Clipboard" }
+    ],
+    "configuration": {
+      "title": "Hash & Transcode to Clipboard",
+      "properties": {
+        "hashToClipboard.encoding": {
+          "type": "string",
+          "enum": ["hex", "base64", "base64url"],
+          "default": "hex",
+          "description": "Output encoding for hash digests (hex is the universal convention)."
+        },
+        "hashToClipboard.uppercase": {
+          "type": "boolean",
+          "default": false,
+          "description": "Uppercase the digest (applies only to hex encoding)."
+        },
+        "hashToClipboard.showNotification": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show a confirmation notification after copying to the clipboard."
+        },
+        "hashToClipboard.multiSelection": {
+          "type": "string",
+          "enum": ["primary", "concatenate"],
+          "default": "primary",
+          "enumDescriptions": [
+            "Use only the primary (last-active) selection.",
+            "Concatenate all non-empty selections in document order, joined by newlines."
+          ],
+          "description": "Behavior when there are multiple selections / cursors."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "check": "tsc --noEmit -p ./",
+    "build": "node esbuild.mjs",
+    "build:test": "node esbuild.mjs --test",
+    "watch": "node esbuild.mjs --watch",
+    "gen:baseline": "npm run build:test && node qa/gen-baseline.mjs",
+    "baseline:promote": "node qa/promote-baseline.mjs",
+    "qa": "npm run build:test && node qa/qa.mjs",
+    "vscode:prepublish": "npm run check && npm run build",
+    "package": "npm run qa && vsce package --allow-missing-repository --no-rewrite-relative-links"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "@types/vscode": "^1.74.0",
+    "@vscode/vsce": "^3.0.0",
+    "esbuild": "^0.23.0",
+    "typescript": "^5.4.0"
+  }
+}

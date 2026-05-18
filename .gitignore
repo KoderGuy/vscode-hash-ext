@@ -1,0 +1,6 @@
+node_modules/
+out/
+qa/algorithms.cjs
+qa/.staging-baseline/
+*.vsix
+.DS_Store

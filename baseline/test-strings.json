@@ -1,0 +1,40 @@
+{
+  "_comment": "Canonical, FROZEN QA test strings. Do not change a value once committed — the baseline.json digests and every downstream comparison depend on these exact bytes. Each `value` is interpreted as UTF-8. Strings 1-3 deliberately share the same letters (lowercase / uppercased / random-case) so case-sensitivity is provable.",
+  "strings": [
+    {
+      "id": "alpha-lower",
+      "category": "alpha, lowercase only",
+      "value": "rojzqsjncruibzoqhusffjmrsnsrdoqs"
+    },
+    {
+      "id": "alpha-upper",
+      "category": "alpha, UPPERCASE (= alpha-lower uppercased)",
+      "value": "ROJZQSJNCRUIBZOQHUSFFJMRSNSRDOQS"
+    },
+    {
+      "id": "alpha-mixed",
+      "category": "alpha, mixed-case (= alpha-lower letters, random case)",
+      "value": "rOJzqSjnCRuIbzoqhuSFFJMRsNSRdoQs"
+    },
+    {
+      "id": "alnum-lower",
+      "category": "alpha lowercase + numeric",
+      "value": "ujd8y4q5fymiwa9kmwr8iyfh1tyv10yt"
+    },
+    {
+      "id": "alnum-mixed",
+      "category": "alpha mixed-case + numeric",
+      "value": "aQY9jlIw8CLAuCNToCdc3v8LC0hHk5iX"
+    },
+    {
+      "id": "alnum-safe-symbols",
+      "category": "alphanumeric + safe symbols (RFC-3986 unreserved: - . _ ~)",
+      "value": "7q0nXc8zzjTXanN8FtLVo_6QJHrIyIc~"
+    },
+    {
+      "id": "alnum-extended-symbols",
+      "category": "alphanumeric + extended symbols (full ASCII keyboard punctuation)",
+      "value": "+D:L]CnW`|q;D'1J)_]uI78%MhO7;ng("
+    }
+  ]
+}
