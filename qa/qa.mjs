@@ -86,6 +86,8 @@ const cutSha = crypto
   .createHash('sha256')
   .update(fs.readFileSync(cutPath))
   .digest('hex');
+// The set of algorithms the CODE UNDER TEST actually exposes.
+const codeCryptoSet = new Set(ALGORITHMS.map((a) => a.cryptoName));
 console.log(`Certifying code-under-test: ${cutArg}`);
 console.log(`  sha256(${path.basename(cutPath)}) = ${cutSha}\n`);
 
@@ -287,15 +289,8 @@ banner('2. Baseline integrity (qa/baseline.json vs oracle + canonical strings)')
   }
 }
 
-// 2b. Production algorithm registry must be exactly covered by the baseline.
-{
-  const reg = ALGORITHMS.map((a) => a.cryptoName).sort().join(',');
-  const base = baseline.algorithms.map((a) => a.cryptoName).sort().join(',');
-  if (!check('baseline', 'algorithms == production registry', reg, base,
-    'extension algorithm set changed — regenerate the baseline')) {
-    abort = true;
-  }
-}
+// (Code-vs-control coverage is its own itemized section below — NOT a single
+// abort here, so every gap is enumerated.)
 
 // 2c. Re-derive every baseline digest with the oracle; must be unchanged.
 for (const s of baseline.strings) {
@@ -324,12 +319,85 @@ if (abort) {
 }
 
 // ---------------------------------------------------------------------------
-// 3. Extension output vs the FROZEN baseline  (the core requirement)
+// 3. Algorithm coverage — gap analysis (code-under-test vs the control)
+//    Itemizes, per algorithm:
+//      UNTESTED — code exposes it but the control has no certified test
+//      MISSING  — control certifies it but the code no longer exposes it
+//      BROKEN   — exposed + tested but computeDigest throws/returns nothing
+//      covered  — present in both and functionally responding
+//    Does NOT abort — every gap is reported; the run still exits non-zero.
 // ---------------------------------------------------------------------------
 
-banner('3. Extension production output vs frozen baseline');
+banner('3. Algorithm coverage — untested / missing (code-under-test vs control)');
+{
+  const controlList = baseline.algorithms; // what the control certifies
+  const controlSet = new Set(controlList.map((a) => a.cryptoName));
+
+  for (const a of ALGORITHMS) {
+    if (!controlSet.has(a.cryptoName)) {
+      fail(
+        'coverage',
+        `UNTESTED ${a.label} (${a.cryptoName})`,
+        '<a certified test in the control>',
+        '<none — code-under-test exposes this algorithm but the control has ' +
+          'no test/baseline for it>',
+        'add it to baseline/algorithms.json, then regenerate + revalidate ' +
+          'the QA package',
+      );
+    }
+  }
+  for (const a of controlList) {
+    if (!codeCryptoSet.has(a.cryptoName)) {
+      fail(
+        'coverage',
+        `MISSING ${a.label} (${a.cryptoName})`,
+        '<implemented and listed in the code-under-test>',
+        '<absent — the control certifies this algorithm but the ' +
+          'code-under-test does not expose it (implementation removed/renamed)>',
+      );
+      continue;
+    }
+    // Exposed + tested: confirm the implementation actually responds.
+    let digest;
+    try {
+      digest = computeDigest(a.cryptoName, 'abc', 'hex', false);
+    } catch (e) {
+      fail(
+        'coverage',
+        `BROKEN ${a.label} (${a.cryptoName})`,
+        '<a hex digest>',
+        `<computeDigest threw: ${e instanceof Error ? e.message : e}>`,
+        'implementation missing/broken',
+      );
+      continue;
+    }
+    if (typeof digest !== 'string' || digest.length === 0) {
+      fail(
+        'coverage',
+        `BROKEN ${a.label} (${a.cryptoName})`,
+        '<a non-empty hex digest>',
+        JSON.stringify(digest),
+        'computeDigest returned no digest — implementation broken',
+      );
+      continue;
+    }
+    pass('coverage', `covered ${a.label} (${a.cryptoName})`);
+  }
+}
+endSection('coverage');
+
+// ---------------------------------------------------------------------------
+// 4. Certification — code-under-test output vs the FROZEN control baseline
+// ---------------------------------------------------------------------------
+
+banner('4. Certification: code-under-test output vs control baseline');
 for (const s of baseline.strings) {
   for (const algo of baseline.algorithms) {
+    if (!codeCryptoSet.has(algo.cryptoName)) {
+      // Already itemized as MISSING in coverage; don't emit a misleading
+      // PASS just because computeDigest accepts the name generically.
+      continue;
+    }
     const cell = baseline.hashes[s.id][algo.cryptoName];
     const inputRepr = `${s.id} (${reprInput(s.value)})`;
     check(
@@ -359,14 +427,14 @@ for (const s of baseline.strings.slice(0, 3)) {
       raw.toString('hex').toUpperCase(), computeDigest(name, s.value, 'hex', true));
   }
 }
-endSection('extension vs baseline');
+endSection('certification');
 
 // ---------------------------------------------------------------------------
-// 4. Transcoders / encoders / decoders
+// 5. Transcoders / encoders / decoders
 // ---------------------------------------------------------------------------
 
 banner(
-  `4. Transcoders (${FULL ? 'FULL corpus' : 'random subset'}, seed=0x${SEED.toString(16)})`,
+  `5. Transcoders (${FULL ? 'FULL corpus' : 'random subset'}, seed=0x${SEED.toString(16)})`,
 );
 const pairs = new Map();
 for (const t of TRANSCODERS) {
@@ -422,7 +490,7 @@ for (const [label, pair] of pairs) {
   }
 }
 
-banner('5. Decoder rejects malformed input');
+banner('6. Decoder rejects malformed input');
 for (const [label, bad] of [
   ['Base64', '@@@@@'],
   ['Base64URL', '@@@@@'],
