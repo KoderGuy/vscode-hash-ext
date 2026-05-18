@@ -1,42 +1,84 @@
 import * as esbuild from 'esbuild';
 import * as crypto from 'crypto';
 import { createRequire } from 'module';
+import Module from 'module';
 import * as fs from 'fs';
 import * as path from 'path';
 
-const watch = process.argv.includes('--watch');
-const test = process.argv.includes('--test');
-const qa = process.argv.includes('--qa');
+const args = process.argv.slice(2);
+const has = (f) => args.includes(f);
+const watch = has('--watch');
 
-if (test) {
-  // Bundle of the production hash/transcoder logic = the CODE UNDER TEST.
-  // Freshly built each QA run so the frozen harness validates the CURRENT
-  // extension code. Gitignored, never shipped in the .vsix.
+// ---------------------------------------------------------------------------
+// out/algorithms.js  — THE trusted component.
+// One deterministic build of src/algorithms.ts. The QA tool certifies THIS
+// exact file; the extension is then built to load THIS exact file. There is
+// no second copy of the hash/transcoder logic anywhere.
+// ---------------------------------------------------------------------------
+async function buildAlgorithms(min = true) {
   await esbuild.build({
     entryPoints: ['src/algorithms.ts'],
     bundle: true,
-    outfile: 'qa/algorithms.cjs',
+    outfile: 'out/algorithms.js',
     platform: 'node',
-    target: 'node16',
+    target: 'node20',
     format: 'cjs',
-    minify: false,
+    minify: min,
     sourcemap: false,
     logLevel: 'info',
   });
-  console.log('esbuild: code-under-test bundle written to qa/algorithms.cjs');
-} else if (qa) {
-  // Build the SINGLE QA PACKAGE: the JSON baseline data + the JS test harness
-  // bundled together into ONE file. Written to gitignored staging only; it is
-  // never auto-promoted and never auto-run. Promote + revalidate + commit are
-  // deliberate steps (see qa/promote-qa.mjs, qa/run-qa.mjs).
+  console.log('esbuild: trusted component written to out/algorithms.js');
+}
+
+// ---------------------------------------------------------------------------
+// out/extension.js — the VSCode entry. It does NOT re-bundle the algorithm
+// logic: the `./algorithms` import is externalised to `./algorithms.js`, so
+// the shipped extension loads the SAME certified out/algorithms.js at runtime.
+// Both files ship in the .vsix (extension/out/).
+// ---------------------------------------------------------------------------
+const externalizeAlgorithms = {
+  name: 'externalize-algorithms',
+  setup(b) {
+    b.onResolve({ filter: /^\.\/algorithms$/ }, () => ({
+      path: './algorithms.js',
+      external: true,
+    }));
+  },
+};
+
+async function buildExtension(min = true) {
+  await esbuild.build({
+    entryPoints: ['src/extension.ts'],
+    bundle: true,
+    outfile: 'out/extension.js',
+    platform: 'node',
+    target: 'node20',
+    format: 'cjs',
+    external: ['vscode'],
+    plugins: [externalizeAlgorithms],
+    minify: min,
+    sourcemap: !min,
+    logLevel: 'info',
+  });
+  console.log('esbuild: extension written to out/extension.js (loads ./algorithms.js)');
+}
+
+// ---------------------------------------------------------------------------
+// qa/.staging-qa/qa.pkg.mjs — the single all-inclusive QA package: the
+// oracle-computed baseline (derived from the SAME trusted out/algorithms.js)
+// + the test harness, bundled into one file. Staging only; promote+commit
+// are deliberate steps.
+// ---------------------------------------------------------------------------
+async function buildQaPackage() {
   const require = createRequire(import.meta.url);
   const repoRoot = process.cwd();
-  const algoBundle = path.join(repoRoot, 'qa', 'algorithms.cjs');
-  if (!fs.existsSync(algoBundle)) {
-    console.error('FATAL  qa/algorithms.cjs missing — run `npm run build:test` first.');
+  const algoFile = path.join(repoRoot, 'out', 'algorithms.js');
+  if (!fs.existsSync(algoFile)) {
+    console.error('FATAL  out/algorithms.js missing — run `npm run build:algorithms` first.');
     process.exit(1);
   }
-  const { ALGORITHMS } = require(algoBundle);
+  // Read the algorithm registry from the trusted component itself.
+  const { ALGORITHMS } = require(algoFile);
 
   const testStrings = JSON.parse(
     fs.readFileSync(path.join(repoRoot, 'baseline', 'test-strings.json'), 'utf8'),
@@ -52,9 +94,8 @@ if (test) {
     process.exit(1);
   }
 
-  // Oracle (raw Node crypto, independent of the code under test) computes
-  // every expected digest. The KAT vectors validated at QA run time anchor
-  // that this oracle is itself correct.
+  // Oracle = raw Node crypto, independent of the code under test. The KAT
+  // vectors validated at QA run time anchor that this oracle is correct.
   const hashes = {};
   for (const s of testStrings.strings) {
     const perAlgo = {};
@@ -80,9 +121,6 @@ if (test) {
     hashes,
   };
 
-  // Write the dataset as a module that qa.mjs imports; esbuild then inlines
-  // it, so the JSON data and JS test logic become ONE all-inclusive file.
-  // This generated module is gitignored — the committed truth is the bundle.
   const dataModule =
     '// GENERATED by `npm run gen:qa` — do not edit; gitignored.\n' +
     `export const BASELINE = ${JSON.stringify(baseline)};\n` +
@@ -98,10 +136,11 @@ if (test) {
     bundle: true,
     outfile,
     platform: 'node',
-    target: 'node18',
+    target: 'node20',
     format: 'esm',
-    minify: false,
+    minify: true,
     sourcemap: false,
+    treeShaking: true,
     logLevel: 'info',
   });
 
@@ -109,39 +148,54 @@ if (test) {
   console.log(
     `esbuild: QA package (json+js) written to ${outfile}\n` +
       `  embedded ${testStrings.strings.length} strings x ${ALGORITHMS.length} ` +
-      `algorithms x {hex,base64} = ${n} values + the test harness\n\n` +
-      'This is a STAGING candidate. It is NOT used by QA until promoted and ' +
-      'committed. Next:\n' +
-      '  1. Review/revalidate the candidate.\n' +
-      '  2. npm run qa:promote          (copies it to qa-dist/qa.pkg.mjs)\n' +
-      '  3. git add qa-dist && git commit -m "update QA package"\n' +
-      'QA refuses to run an uncommitted package.',
+      `algorithms x {hex,base64} = ${n} values + the self-verifying test harness\n\n` +
+      'STAGING candidate — NOT used by QA until promoted and committed:\n' +
+      '  1. Review/revalidate it.\n' +
+      '  2. npm run qa:promote\n' +
+      '  3. git add qa-dist && git commit -m "update QA package"',
   );
-} else {
-  const production = !watch;
+}
 
-  /** @type {import('esbuild').BuildOptions} */
-  const options = {
+// Suppress an unused-import warning for Module (kept for parity/use sites).
+void Module;
+
+if (has('--algorithms')) {
+  await buildAlgorithms(true);
+} else if (has('--extension')) {
+  await buildExtension(true);
+} else if (has('--qa')) {
+  await buildQaPackage();
+} else if (watch) {
+  // Dev: unminified, rebuild both on change.
+  const ctxA = await esbuild.context({
+    entryPoints: ['src/algorithms.ts'],
+    bundle: true,
+    outfile: 'out/algorithms.js',
+    platform: 'node',
+    target: 'node20',
+    format: 'cjs',
+    minify: false,
+    sourcemap: true,
+    logLevel: 'info',
+  });
+  const ctxE = await esbuild.context({
     entryPoints: ['src/extension.ts'],
     bundle: true,
     outfile: 'out/extension.js',
     platform: 'node',
-    target: 'node16',
+    target: 'node20',
     format: 'cjs',
-    // Host-provided at runtime; never bundle it. Node built-ins (crypto, etc.)
-    // are external on the 'node' platform automatically.
     external: ['vscode'],
-    minify: production,
-    sourcemap: !production,
+    plugins: [externalizeAlgorithms],
+    minify: false,
+    sourcemap: true,
     logLevel: 'info',
-  };
-
-  if (watch) {
-    const ctx = await esbuild.context(options);
-    await ctx.watch();
-    console.log('esbuild: watching for changes...');
-  } else {
-    await esbuild.build(options);
-    console.log('esbuild: production bundle written to out/extension.js');
-  }
+  });
+  await ctxA.watch();
+  await ctxE.watch();
+  console.log('esbuild: watching (algorithms + extension)...');
+} else {
+  // Default = full product build: trusted component, then the extension.
+  await buildAlgorithms(true);
+  await buildExtension(true);
 }

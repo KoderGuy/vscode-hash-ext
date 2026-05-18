@@ -1,6 +1,5 @@
 node_modules/
 out/
-qa/algorithms.cjs
 qa/embedded-data.mjs
 qa/.staging-qa/
 *.vsix
