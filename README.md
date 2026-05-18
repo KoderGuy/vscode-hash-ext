@@ -85,43 +85,48 @@ the `encoding` setting.)
 
 ```bash
 npm install
-npm run check     # type-check (tsc --noEmit)
-npm run build     # minified single-file bundle -> out/extension.js
-npm run qa        # standalone QA harness (mandatory gate, see below)
-npm run package   # runs qa, then -> vscode-hash-ext-0.0.1.vsix
+npm run check            # type-check (tsc --noEmit)
+npm run build:algorithms # build the trusted component  -> out/algorithms.js
+npm run qa               # CERTIFY out/algorithms.js (see below)
+npm run build:extension  # build extension that LOADS the certified file
+npm run package          # -> vscode-hash-ext-0.0.1.vsix
+# or the whole trusted pipeline in order:
+npm run release          # check → build:algorithms → qa → build:extension → package
 ```
 
 Press **F5** in VSCode to launch the Extension Development Host for debugging.
 
 ## QA harness
 
-The QA test is **one single, all-inclusive committed file**:
-`qa-dist/qa.pkg.mjs`. esbuild bundles the oracle-computed baseline dataset
-*and* the JS test harness together into that one artifact. `npm run qa`
-executes **only the committed package** — it is **never rebuilt by
-`npm run qa`/`npm run package`** — and the package is **never shipped in the
-`.vsix`**. Packaging is gated: a failing QA aborts the build.
+**The QA tool certifies the one trusted component the product is built from.**
+There is a single built file `out/algorithms.js` (the hash/transcoder logic).
+QA is launched with that file's path and certifies *that exact file*. The
+extension is then built so it **loads the same file** — `out/extension.js`
+contains `require("./algorithms.js")`, and the `.vsix` ships both. The
+certified bytes are the shipped bytes; there is no separate "QA copy".
 
-### The single committed QA package
+### One trusted component, certified then shipped
 
-- **`qa-dist/qa.pkg.mjs`** — the frozen test: embedded baseline (7 strings ×
-  16 algorithms × `{hex, base64}` = 224 oracle-computed values) + the test
-  harness, as one tracked file. This is the only thing QA runs.
-- **`qa/run-qa.mjs`** — a tiny committed launcher: reads `qa-dist/qa.pkg.mjs`
-  as committed at `git HEAD` and executes exactly those bytes (from a temp
-  file). An uncommitted / staged / working-tree-modified package is **never
-  executed** — it aborts (FATAL) if the package isn't committed, and ignores
-  working-tree edits in favor of the committed bytes.
+- **`out/algorithms.js`** — the only hash/transcoder code (built from the
+  single source `src/algorithms.ts`). QA certifies it; the extension loads
+  it; the `.vsix` ships it. `npm run qa` prints its `sha256` and a
+  `CERTIFIED` verdict — that hash equals the `algorithms.js` inside the
+  `.vsix` (verifiable provenance, no switcheroo).
+- **`out/extension.js`** — the VSCode entry; does **not** re-bundle the
+  logic — it `require("./algorithms.js")`s the certified file at runtime.
+
+### The QA package is one self-verifying committed file
+
+- **`qa-dist/qa.pkg.mjs`** — the entire test as one tracked artifact: the
+  embedded oracle-computed baseline (7 strings × 16 algorithms ×
+  `{hex, base64}` = 224 values) **+** the harness **+** an in-bundle
+  self-check. There is **no external launcher**. On startup the bundled code
+  refuses to run unless it is byte-identical to `qa-dist/qa.pkg.mjs` as
+  committed at `git HEAD` (uncommitted / modified / relocated → FATAL). The
+  trust check ships *inside* the frozen artifact, so no code outside it can
+  alter the QA process.
 - **`baseline/test-strings.json`** — the canonical 7 frozen input strings
-  (the authored source the dataset is generated from). Never change a value
-  without regenerating + revalidating + recommitting the package.
-
-### Code under test is always fresh
-
-Only the *harness* is frozen. The extension's production functions
-(`qa/algorithms.cjs`, gitignored) are **rebuilt every run** by
-`npm run build:test`, so the frozen package always validates the **current**
-extension code against the immutable embedded baseline.
+  (authored source the embedded dataset is generated from).
 
 ### Rebuilding the QA package (deliberate, revalidated, never automatic)
 
@@ -130,30 +135,29 @@ test logic or inputs must change:
 
 ```bash
 # 1. (optional) edit baseline/test-strings.json or the qa/ harness sources
-npm run gen:qa        # builds code-under-test, recomputes the baseline via the
-                      #   oracle, bundles data+harness -> gitignored
-                      #   qa/.staging-qa/qa.pkg.mjs  (NOT used by QA)
-# 2. review AND revalidate the staging candidate
+npm run gen:qa        # recomputes baseline via the oracle + bundles
+                      #   data+harness -> gitignored qa/.staging-qa/qa.pkg.mjs
+# 2. review AND revalidate the candidate
+#    (QA_SELFCHECK_BYPASS=1 node qa/.staging-qa/qa.pkg.mjs out/algorithms.js)
 npm run qa:promote    # copies it over qa-dist/qa.pkg.mjs
 git add qa-dist && git commit -m "update QA package"   # REQUIRED
 ```
 
-A rebuilt package is not trusted until a human revalidates and commits it —
-QA refuses to run an uncommitted package.
+A rebuilt package is untrusted until a human revalidates and commits it — QA
+refuses to run an uncommitted package.
 
 ### QA flow (inside the committed package)
 
-1. **Oracle** — validate Node `crypto` against ~20 **published** KAT vectors
+1. **Self-verify** — refuse unless running the committed `qa-dist/qa.pkg.mjs`.
+2. **Oracle** — validate Node `crypto` against ~20 **published** KAT vectors
    (NIST/RFC/SM3); abort if untrustworthy.
-2. **Baseline integrity** — assert the embedded baseline matches the
-   canonical strings, exactly covers the production algorithm registry, and
-   re-derives byte-for-byte from the oracle (catches a tampered embedded
-   dataset or a forked OpenSSL → abort).
-3. **Extension vs baseline** — the core test: the **production**
-   `computeDigest()` (the exact function the extension uses) must equal the
-   embedded baseline `hex` and `base64` for every string × algorithm, plus
-   base64url/uppercase encoding-path spot-checks vs the oracle.
-4. **Transcoders** — round-trip + independent-oracle check on the frozen
+3. **Baseline integrity** — assert the embedded baseline matches the
+   canonical strings, exactly covers the algorithm registry, and re-derives
+   byte-for-byte from the oracle (tampered data / forked OpenSSL → abort).
+4. **Certify the component** — the supplied `algorithms.js`’s
+   `computeDigest()` must equal the embedded baseline `hex` and `base64` for
+   every string × algorithm, plus base64url/uppercase spot-checks.
+5. **Transcoders** — round-trip + independent-oracle check on the frozen
    strings plus a seeded random corpus subset (`QA_FULL=1` whole corpus;
    `QA_SEED=<n>` to reproduce), and decoders must reject malformed input.
 

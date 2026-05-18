@@ -16,16 +16,20 @@ Initial release.
 - Prompts for word-under-cursor vs entire-file when nothing is selected.
 - Zero runtime dependencies; minified single-file bundle.
 - Compatible with VSCode, Cursor, and Antigravity (engine `^1.74.0`).
-- QA test as a **single all-inclusive committed package**
-  (`qa-dist/qa.pkg.mjs`): esbuild bundles the oracle-computed baseline
-  dataset (224 values) and the JS test harness into one tracked file.
-  `qa/run-qa.mjs` executes only the package as committed at git HEAD (exact
-  bytes, from a temp file); an uncommitted/working-tree-modified package is
-  never run. KAT-validated oracle, baseline-integrity guard, extension-vs-
-  embedded-baseline, transcoder round-trips — verbose per-test stdout.
-  Hard-gates packaging; excluded from the `.vsix`.
-- The test is **never rebuilt by `npm run qa`/`package`** — only the
-  code-under-test (`qa/algorithms.cjs`) is rebuilt each run, so the frozen
-  package always validates the current extension. Rebuilding the package is
-  deliberate and revalidated: `npm run gen:qa` (gitignored staging) →
-  review/revalidate → `npm run qa:promote` → `git add qa-dist && git commit`.
+- **Certify-the-component model.** One trusted file `out/algorithms.js` is
+  built from the single source `src/algorithms.ts`; QA is launched with its
+  path and certifies that exact file (prints its `sha256` + `CERTIFIED`
+  verdict). The extension is built to **load the same file**
+  (`out/extension.js` → `require("./algorithms.js")`); the `.vsix` ships both
+  and the shipped `algorithms.js` is byte-identical to the certified one —
+  verifiable provenance, no separate QA copy.
+- QA is a **single self-verifying committed package** (`qa-dist/qa.pkg.mjs`):
+  esbuild bundles the oracle-computed baseline (224 values) + the harness +
+  an in-bundle self-check. No external launcher — the package refuses to run
+  unless it is byte-identical to git HEAD. KAT-validated oracle, baseline-
+  integrity guard, component certification, transcoder round-trips; verbose
+  per-test stdout; non-zero exit on any failure.
+- Rebuilding the package is deliberate and revalidated: `npm run gen:qa`
+  (gitignored staging) → review/revalidate → `npm run qa:promote` →
+  `git add qa-dist && git commit`. `npm run release` runs the full trusted
+  pipeline (check → build:algorithms → qa → build:extension → package).
