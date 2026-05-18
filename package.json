@@ -216,7 +216,7 @@
     "build:extension": "node esbuild.mjs --extension",
     "build": "node esbuild.mjs",
     "watch": "node esbuild.mjs --watch",
-    "gen:qa": "npm run build:algorithms && node esbuild.mjs --qa",
+    "gen:qa": "node esbuild.mjs --qa",
     "qa:promote": "node qa/promote-qa.mjs",
     "qa": "npm run build:algorithms && node qa-dist/qa.pkg.mjs out/algorithms.js",
     "vscode:prepublish": "npm run check && npm run build && npm run qa",

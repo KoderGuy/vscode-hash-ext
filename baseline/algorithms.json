@@ -1,0 +1,21 @@
+{
+  "_comment": "AUDITED, CANONICAL algorithm set the QA control certifies. This is the auditor's OWN declaration — it is NOT derived from src/ or out/algorithms.js. The certifier embeds this list, computes expected digests for it with the Node crypto oracle, and at certify time asserts the code-under-test exposes EXACTLY this set. Changing this file is a deliberate, reviewed act (like baseline/test-strings.json); a divergent code-under-test must FAIL, not silently reshape the control.",
+  "algorithms": [
+    { "id": "sha256", "cryptoName": "sha256", "label": "SHA-256", "legacy": false },
+    { "id": "sha384", "cryptoName": "sha384", "label": "SHA-384", "legacy": false },
+    { "id": "sha512", "cryptoName": "sha512", "label": "SHA-512", "legacy": false },
+    { "id": "sha512_256", "cryptoName": "sha512-256", "label": "SHA-512/256", "legacy": false },
+    { "id": "sha3_224", "cryptoName": "sha3-224", "label": "SHA3-224", "legacy": false },
+    { "id": "sha3_256", "cryptoName": "sha3-256", "label": "SHA3-256", "legacy": false },
+    { "id": "sha3_384", "cryptoName": "sha3-384", "label": "SHA3-384", "legacy": false },
+    { "id": "sha3_512", "cryptoName": "sha3-512", "label": "SHA3-512", "legacy": false },
+    { "id": "blake2b512", "cryptoName": "blake2b512", "label": "BLAKE2b-512", "legacy": false },
+    { "id": "blake2s256", "cryptoName": "blake2s256", "label": "BLAKE2s-256", "legacy": false },
+    { "id": "sha224", "cryptoName": "sha224", "label": "SHA-224", "legacy": false },
+    { "id": "sha512_224", "cryptoName": "sha512-224", "label": "SHA-512/224", "legacy": false },
+    { "id": "ripemd160", "cryptoName": "ripemd160", "label": "RIPEMD-160", "legacy": false },
+    { "id": "sm3", "cryptoName": "sm3", "label": "SM3", "legacy": false },
+    { "id": "sha1", "cryptoName": "sha1", "label": "SHA-1", "legacy": true },
+    { "id": "md5", "cryptoName": "md5", "label": "MD5", "legacy": true }
+  ]
+}

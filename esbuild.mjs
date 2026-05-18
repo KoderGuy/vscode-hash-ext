@@ -1,7 +1,5 @@
 import * as esbuild from 'esbuild';
 import * as crypto from 'crypto';
-import { createRequire } from 'module';
-import Module from 'module';
 import * as fs from 'fs';
 import * as path from 'path';
 
@@ -64,22 +62,22 @@ async function buildExtension(min = true) {
 }
 
 // ---------------------------------------------------------------------------
-// qa/.staging-qa/qa.pkg.mjs — the single all-inclusive QA package: the
-// oracle-computed baseline (derived from the SAME trusted out/algorithms.js)
-// + the test harness, bundled into one file. Staging only; promote+commit
-// are deliberate steps.
+// qa/.staging-qa/qa.pkg.mjs — the single all-inclusive QA package.
+//
+// INDEPENDENCE: the control declares its OWN expected algorithm set and
+// inputs from audited committed data (baseline/algorithms.json,
+// baseline/test-strings.json). It does NOT read src/ or out/algorithms.js —
+// so it never needs the code-under-test to be built first, and it can never
+// silently reshape itself to whatever the code happens to expose. Expected
+// digests come from the Node crypto oracle. Staging only; promote+commit are
+// deliberate steps.
 // ---------------------------------------------------------------------------
 async function buildQaPackage() {
-  const require = createRequire(import.meta.url);
   const repoRoot = process.cwd();
-  const algoFile = path.join(repoRoot, 'out', 'algorithms.js');
-  if (!fs.existsSync(algoFile)) {
-    console.error('FATAL  out/algorithms.js missing — run `npm run build:algorithms` first.');
-    process.exit(1);
-  }
-  // Read the algorithm registry from the trusted component itself.
-  const { ALGORITHMS } = require(algoFile);
 
+  const { algorithms: ALGORITHMS } = JSON.parse(
+    fs.readFileSync(path.join(repoRoot, 'baseline', 'algorithms.json'), 'utf8'),
+  );
   const testStrings = JSON.parse(
     fs.readFileSync(path.join(repoRoot, 'baseline', 'test-strings.json'), 'utf8'),
   );
@@ -155,9 +153,6 @@ async function buildQaPackage() {
       '  3. git add qa-dist && git commit -m "update QA package"',
   );
 }
-
-// Suppress an unused-import warning for Module (kept for parity/use sites).
-void Module;
 
 if (has('--algorithms')) {
   await buildAlgorithms(true);
