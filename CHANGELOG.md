@@ -23,10 +23,13 @@ Initial release.
   (`out/extension.js` → `require("./algorithms.js")`); the `.vsix` ships both
   and the shipped `algorithms.js` is byte-identical to the certified one —
   verifiable provenance, no separate QA copy.
-- QA is a **single self-verifying committed package** (`qa-dist/qa.pkg.mjs`):
-  esbuild bundles the oracle-computed baseline (224 values) + the harness +
-  an in-bundle self-check. No external launcher — the package refuses to run
-  unless it is byte-identical to git HEAD. KAT-validated oracle, baseline-
+- QA is a **single self-contained, source-controlled control**
+  (`qa-dist/qa.pkg.mjs`): esbuild inlines the oracle-computed baseline (224
+  values) + harness + audited test cases. It depends on **nothing** but the
+  Node runtime and the file it certifies — no git, network, other repo file,
+  or third-party package. Authority is by **provenance** (reviewed, promoted,
+  committed → fetched from source control to run), not runtime self-checks,
+  so results cannot be externally influenced. KAT-validated oracle, baseline-
   integrity guard, component certification, transcoder round-trips; verbose
   per-test stdout; non-zero exit on any failure.
 - Rebuilding the package is deliberate and revalidated: `npm run gen:qa`

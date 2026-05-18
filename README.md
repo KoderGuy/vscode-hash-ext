@@ -115,16 +115,18 @@ certified bytes are the shipped bytes; there is no separate "QA copy".
 - **`out/extension.js`** — the VSCode entry; does **not** re-bundle the
   logic — it `require("./algorithms.js")`s the certified file at runtime.
 
-### The QA package is one self-verifying committed file
+### The QA package is one self-contained, source-controlled control
 
 - **`qa-dist/qa.pkg.mjs`** — the entire test as one tracked artifact: the
   embedded oracle-computed baseline (7 strings × 16 algorithms ×
-  `{hex, base64}` = 224 values) **+** the harness **+** an in-bundle
-  self-check. There is **no external launcher**. On startup the bundled code
-  refuses to run unless it is byte-identical to `qa-dist/qa.pkg.mjs` as
-  committed at `git HEAD` (uncommitted / modified / relocated → FATAL). The
-  trust check ships *inside* the frozen artifact, so no code outside it can
-  alter the QA process.
+  `{hex, base64}` = 224 values) **+** the harness **+** the audited test
+  cases, inlined. It is the **control / independent auditor**: it depends on
+  **nothing** but the Node runtime and the one file it is asked to certify —
+  no git, no network, no other repo file, no third-party packages, not even
+  itself. Its authority comes from **provenance**: it is reviewed, promoted,
+  and committed, so you *fetch the committed package from source control and
+  run that*. Its results therefore cannot be externally influenced — when
+  the test and the code disagree, the code is wrong, not the test.
 - **`baseline/test-strings.json`** — the canonical 7 frozen input strings
   (authored source the embedded dataset is generated from).
 
@@ -148,16 +150,15 @@ refuses to run an uncommitted package.
 
 ### QA flow (inside the committed package)
 
-1. **Self-verify** — refuse unless running the committed `qa-dist/qa.pkg.mjs`.
-2. **Oracle** — validate Node `crypto` against ~20 **published** KAT vectors
+1. **Oracle** — validate Node `crypto` against ~20 **published** KAT vectors
    (NIST/RFC/SM3); abort if untrustworthy.
-3. **Baseline integrity** — assert the embedded baseline matches the
+2. **Baseline integrity** — assert the embedded baseline matches the
    canonical strings, exactly covers the algorithm registry, and re-derives
    byte-for-byte from the oracle (tampered data / forked OpenSSL → abort).
-4. **Certify the component** — the supplied `algorithms.js`’s
+3. **Certify the component** — the supplied `algorithms.js`’s
    `computeDigest()` must equal the embedded baseline `hex` and `base64` for
    every string × algorithm, plus base64url/uppercase spot-checks.
-5. **Transcoders** — round-trip + independent-oracle check on the frozen
+4. **Transcoders** — round-trip + independent-oracle check on the frozen
    strings plus a seeded random corpus subset (`QA_FULL=1` whole corpus;
    `QA_SEED=<n>` to reproduce), and decoders must reject malformed input.
 
