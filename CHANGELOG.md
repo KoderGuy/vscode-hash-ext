@@ -32,6 +32,11 @@ Initial release.
   so results cannot be externally influenced. KAT-validated oracle, baseline-
   integrity guard, component certification, transcoder round-trips; verbose
   per-test stdout; non-zero exit on any failure.
+- The control declares its OWN algorithm set + inputs in audited committed
+  data (`baseline/algorithms.json`, `baseline/test-strings.json`); `gen:qa`
+  builds from those + the crypto oracle only — no `src/`/`out/` read, no
+  prior build needed (removed the circular "control derived from the code it
+  audits" dependency). A divergent code-under-test FAILs the registry check.
 - Rebuilding the package is deliberate and revalidated: `npm run gen:qa`
   (gitignored staging) → review/revalidate → `npm run qa:promote` →
   `git add qa-dist && git commit`. `npm run release` runs the full trusted

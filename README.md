@@ -127,8 +127,12 @@ certified bytes are the shipped bytes; there is no separate "QA copy".
   and committed, so you *fetch the committed package from source control and
   run that*. Its results therefore cannot be externally influenced — when
   the test and the code disagree, the code is wrong, not the test.
-- **`baseline/test-strings.json`** — the canonical 7 frozen input strings
-  (authored source the embedded dataset is generated from).
+- **`baseline/algorithms.json`** + **`baseline/test-strings.json`** — the
+  auditor's OWN audited declarations: the canonical algorithm set and the 7
+  frozen input strings. `gen:qa` builds the control from these + the Node
+  crypto oracle **only** — it never reads `src/` or `out/algorithms.js`, so
+  it needs no prior build and cannot silently reshape itself to whatever the
+  code-under-test exposes (a divergent code set FAILs the registry check).
 
 ### Rebuilding the QA package (deliberate, revalidated, never automatic)
 
@@ -136,7 +140,8 @@ No `npm` command rebuilds the test as a side effect. Rebuild only when the
 test logic or inputs must change:
 
 ```bash
-# 1. (optional) edit baseline/test-strings.json or the qa/ harness sources
+# 1. (optional) edit baseline/algorithms.json, baseline/test-strings.json,
+#    or the qa/ harness sources
 npm run gen:qa        # recomputes baseline via the oracle + bundles
                       #   data+harness -> gitignored qa/.staging-qa/qa.pkg.mjs
 # 2. review AND revalidate the candidate
