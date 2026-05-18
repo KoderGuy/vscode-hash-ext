@@ -122,6 +122,7 @@ const SEED = (process.env.QA_SEED && Number(process.env.QA_SEED)) || 0x5eed;
 let passCount = 0;
 let failCount = 0;
 const sectionStats = [];
+const failures = []; // collected so the SUMMARY is a complete to-do list
 
 // ---------------------------------------------------------------------------
 // Rendering helpers
@@ -179,6 +180,7 @@ function pass(section, label, expected, got) {
 }
 function fail(section, label, expected, got, extra) {
   failCount++;
+  failures.push(`${section.padEnd(10)} ${label}${extra ? `  — ${extra}` : ''}`);
   console.log(`FAIL  ${section}  ${label}`);
   if (expected !== undefined) {
     console.log(`        expected: ${shortVal(expected)}`);
@@ -192,6 +194,20 @@ function check(section, label, expected, got, extra) {
   if (ok) pass(section, label, expected, got);
   else fail(section, label, expected, got, extra);
   return ok;
+}
+// Never let a thrown call stop the run: turn a throw into a comparable
+// "<threw: …>" value so it is recorded as a normal FAIL and testing
+// continues. A full report (all failures) is a complete to-do list.
+function safe(thunk) {
+  try {
+    return { ok: true, value: thunk() };
+  } catch (e) {
+    return { ok: false, err: e instanceof Error ? e.message : String(e) };
+  }
+}
+function dg(name, val, enc, up) {
+  const r = safe(() => computeDigest(name, val, enc, up));
+  return r.ok ? r.value : `<threw: ${r.err}>`;
 }
 function expectThrow(section, label, fn) {
   let threw = false;
@@ -233,6 +249,14 @@ function printSummaryAndExit() {
       `(seed=0x${SEED.toString(16)}, ${FULL ? 'FULL' : 'subset'})`,
   );
   if (failCount > 0) {
+    console.log(`\n  TO-DO (every failure, full run — nothing skipped):`);
+    for (const f of failures) console.log(`    • ${f}`);
+    if (unreliable) {
+      console.log(
+        '\n  NOTE: oracle/baseline integrity failed — some failures above ' +
+          'may be downstream consequences; fix the control first.',
+      );
+    }
     console.log(
       `\nRESULT: FAIL — ${cutArg} is NOT certified. Do not build/ship it.`,
     );
@@ -253,24 +277,35 @@ function printSummaryAndExit() {
 
 banner('1. Oracle validation (published KAT vectors)');
 const availableHashes = new Set(crypto.getHashes());
-let abort = false;
+// `unreliable` is never an early exit — we ALWAYS run every section so the
+// full failure list is a complete to-do list. It only annotates the summary
+// when the oracle/baseline themselves are suspect (so downstream FAILs may be
+// consequences, not independent defects).
+let unreliable = false;
 for (const v of KAT) {
   const label = `${v.cryptoName}(${JSON.stringify(v.input)})`;
   if (!availableHashes.has(v.cryptoName)) {
     fail('kat', label, v.expected, '<algorithm unavailable in this Node build>');
-    abort = true;
+    unreliable = true;
     continue;
   }
-  const oracle = crypto.createHash(v.cryptoName).update(v.input, 'utf8').digest('hex');
-  if (!check('kat', label, v.expected, oracle)) abort = true;
+  let oracle;
+  try {
+    oracle = crypto.createHash(v.cryptoName).update(v.input, 'utf8').digest('hex');
+  } catch (e) {
+    fail('kat', label, v.expected, `<crypto threw: ${e instanceof Error ? e.message : e}>`);
+    unreliable = true;
+    continue;
+  }
+  if (!check('kat', label, v.expected, oracle)) unreliable = true;
 }
 endSection('oracle/KAT');
-if (abort) {
+if (unreliable) {
   console.log(
-    '\nFATAL  The oracle (Node crypto) does not reproduce the published ' +
-      'vectors. Refusing to validate against an untrustworthy oracle.',
+    '\nWARNING  The oracle (Node crypto) failed one or more published ' +
+      'vectors. Continuing so the full report is produced — but treat all ' +
+      'downstream comparisons as suspect until the oracle is fixed.',
   );
-  printSummaryAndExit();
 }
 
 // ---------------------------------------------------------------------------
@@ -284,8 +319,8 @@ banner('2. Baseline integrity (qa/baseline.json vs oracle + canonical strings)')
   const a = JSON.stringify(canonicalStrings);
   const b = JSON.stringify(baseline.strings);
   if (!check('baseline', 'strings == test-strings.json', a, b,
-    'baseline is stale vs canonical strings — run `npm run gen:baseline`')) {
-    abort = true;
+    'baseline is stale vs canonical strings — regenerate the QA package')) {
+    unreliable = true;
   }
 }
 
@@ -298,24 +333,32 @@ for (const s of baseline.strings) {
     const cell = baseline.hashes[s.id]?.[algo.cryptoName];
     if (!cell) {
       fail('baseline', `${s.id}/${algo.cryptoName} present`, '<hex+base64>', '<missing>');
-      abort = true;
+      unreliable = true;
       continue;
     }
-    const raw = crypto.createHash(algo.cryptoName).update(s.value, 'utf8').digest();
+    let raw;
+    try {
+      raw = crypto.createHash(algo.cryptoName).update(s.value, 'utf8').digest();
+    } catch (e) {
+      fail('baseline', `${s.id} ${algo.label} (oracle)`, '<hex+base64>',
+        `<crypto threw: ${e instanceof Error ? e.message : e}>`,
+        'control declares an algorithm this environment cannot hash');
+      unreliable = true;
+      continue;
+    }
     if (!check('baseline', `${s.id} ${algo.label} hex (oracle)`, raw.toString('hex'), cell.hex,
-      'baseline hex differs from oracle — tampered or env drift')) abort = true;
+      'baseline hex differs from oracle — tampered or env drift')) unreliable = true;
     if (!check('baseline', `${s.id} ${algo.label} b64 (oracle)`, raw.toString('base64'), cell.base64,
-      'baseline base64 differs from oracle — tampered or env drift')) abort = true;
+      'baseline base64 differs from oracle — tampered or env drift')) unreliable = true;
   }
 }
 endSection('baseline integrity');
-if (abort) {
+if (unreliable) {
   console.log(
-    '\nFATAL  Baseline failed integrity. The frozen dataset is not ' +
-      'trustworthy in this environment; aborting before testing the ' +
-      'extension. Investigate, then `npm run gen:baseline` and review.',
+    '\nWARNING  Oracle and/or baseline integrity failed above. Continuing ' +
+      'the full run so nothing is hidden — but some later FAILs may be ' +
+      'consequences of this, not independent defects. Fix the control first.',
   );
-  printSummaryAndExit();
 }
 
 // ---------------------------------------------------------------------------
@@ -400,18 +443,10 @@ for (const s of baseline.strings) {
     }
     const cell = baseline.hashes[s.id][algo.cryptoName];
     const inputRepr = `${s.id} (${reprInput(s.value)})`;
-    check(
-      'hash',
-      `${algo.label} hex   ${inputRepr}`,
-      cell.hex,
-      computeDigest(algo.cryptoName, s.value, 'hex', false),
-    );
-    check(
-      'hash',
-      `${algo.label} b64   ${inputRepr}`,
-      cell.base64,
-      computeDigest(algo.cryptoName, s.value, 'base64', false),
-    );
+    check('hash', `${algo.label} hex   ${inputRepr}`, cell.hex,
+      dg(algo.cryptoName, s.value, 'hex', false));
+    check('hash', `${algo.label} b64   ${inputRepr}`, cell.base64,
+      dg(algo.cryptoName, s.value, 'base64', false));
   }
 }
 
@@ -420,11 +455,17 @@ for (const s of baseline.strings) {
 const spotAlgos = ['sha256', 'sha3-512', 'blake2b512', 'md5'];
 for (const s of baseline.strings.slice(0, 3)) {
   for (const name of spotAlgos) {
-    const raw = crypto.createHash(name).update(s.value, 'utf8').digest();
+    const r = safe(() => crypto.createHash(name).update(s.value, 'utf8').digest());
+    if (!r.ok) {
+      fail('hash', `${name} spot  ${s.id}`, '<oracle digest>',
+        `<oracle threw: ${r.err}>`);
+      continue;
+    }
+    const raw = r.value;
     check('hash', `${name} base64url  ${s.id}`,
-      raw.toString('base64url'), computeDigest(name, s.value, 'base64url', false));
+      raw.toString('base64url'), dg(name, s.value, 'base64url', false));
     check('hash', `${name} HEX-upper  ${s.id}`,
-      raw.toString('hex').toUpperCase(), computeDigest(name, s.value, 'hex', true));
+      raw.toString('hex').toUpperCase(), dg(name, s.value, 'hex', true));
   }
 }
 endSection('certification');
@@ -475,18 +516,20 @@ const payloads = [...baseline.strings.map((s) => s.value), ...fuzz];
 for (const [label, pair] of pairs) {
   const oracle = encodeOracle[label];
   for (const payload of payloads) {
-    const enc = pair.encode.run(payload);
-    check('transcode', `${label} encode  input=${reprInput(payload)}`,
-      oracle(payload), enc);
-    let rt;
-    try {
-      rt = pair.decode.run(enc);
-    } catch (e) {
-      fail('transcode', `${label} roundtrip  input=${reprInput(payload)}`,
-        payload, `<decode threw: ${e instanceof Error ? e.message : e}>`);
+    const lbl = `input=${reprInput(payload)}`;
+    const encR = safe(() => pair.encode.run(payload));
+    const oraR = safe(() => oracle(payload));
+    check('transcode', `${label} encode  ${lbl}`,
+      oraR.ok ? oraR.value : `<oracle threw: ${oraR.err}>`,
+      encR.ok ? encR.value : `<encode threw: ${encR.err}>`);
+    if (!encR.ok) {
+      fail('transcode', `${label} roundtrip  ${lbl}`, payload,
+        '<skipped: encode threw>');
       continue;
     }
-    check('transcode', `${label} roundtrip  input=${reprInput(payload)}`, payload, rt);
+    const rt = safe(() => pair.decode.run(encR.value));
+    check('transcode', `${label} roundtrip  ${lbl}`, payload,
+      rt.ok ? rt.value : `<decode threw: ${rt.err}>`);
   }
 }
 
