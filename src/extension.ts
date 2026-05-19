@@ -91,12 +91,20 @@ async function getInputText(cfg: HashConfig): Promise<string | null> {
 // specific per-algorithm / per-codec command is declared in package.json but
 // its palette visibility is gated by a `when` context key.
 //
-// The FIRST time the user runs a specific command (normally by choosing it
-// from a picker), we record its id into the user setting
-// `hashToClipboard.visibleCommands`. From then on it is shown in the palette
-// on every session — the user can then assign a keybinding to it via the
-// normal UI, and can prune the list by editing that setting. Every command
-// stays directly keybindable at all times regardless of visibility.
+// A specific command is added to the user setting
+// `hashToClipboard.visibleCommands` ONLY when its registered command handler
+// runs — i.e. the user pressed a KEYBINDING they assigned to it (a still-
+// hidden command can't be invoked from the palette, so the handler's first
+// run is necessarily a keypress). The picker runs commands via a direct
+// function call, NOT the registered command, so picking algorithms records
+// nothing — the palette never accumulates clutter from exploration.
+//
+// Discoverability: the Keyboard Shortcuts editor lists EVERY contributed
+// command regardless of palette `when` gating, so a user can always find and
+// bind any algorithm/codec there even before it's in the palette. After the
+// first keypress it also appears in the palette on every session; the user
+// can prune the list by editing the setting (applied live). Every command is
+// keybindable at all times regardless of visibility.
 // ---------------------------------------------------------------------------
 const VISIBLE_SETTING = 'visibleCommands';
 
@@ -129,9 +137,10 @@ function applyVisibility(list: string[]): void {
 }
 
 /**
- * Record a command as visible-from-now-on (persisted to the user's settings)
- * and reveal it immediately. Called whenever a specific command runs — via a
- * picker, a keybinding, or the palette — so the first use makes it stick.
+ * Record a command as visible-from-now-on (persisted to user settings) and
+ * reveal it immediately. Called ONLY from the registered command handler —
+ * i.e. a keybinding press (or, once visible, the palette). The picker never
+ * calls this, so exploring algorithms never clutters the palette.
  */
 function reveal(commandId: string): void {
   const list = getVisibleList();
@@ -240,7 +249,8 @@ async function pickHash(): Promise<void> {
     matchOnDescription: true,
   });
   if (choice?.algo) {
-    reveal(`hashToClipboard.${choice.algo.id}`);
+    // Picker runs the hash but records NOTHING — otherwise every algorithm a
+    // user ever tries would accumulate and re-clutter the palette.
     await runHash(choice.algo);
   }
 }
@@ -254,7 +264,7 @@ async function pickTranscode(direction: 'encode' | 'decode'): Promise<void> {
     placeHolder: `Pick a format to ${direction} — result is copied to the clipboard`,
   });
   if (choice) {
-    reveal(`transcode.${choice.t.id}`);
+    // Picker runs the codec but records NOTHING (see pickHash).
     await runTranscode(choice.t);
   }
 }
