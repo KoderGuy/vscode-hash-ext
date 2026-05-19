@@ -91,20 +91,23 @@ async function getInputText(cfg: HashConfig): Promise<string | null> {
 // specific per-algorithm / per-codec command is declared in package.json but
 // its palette visibility is gated by a `when` context key.
 //
-// A specific command is added to the user setting
-// `hashToClipboard.visibleCommands` ONLY when its registered command handler
-// runs — i.e. the user pressed a KEYBINDING they assigned to it (a still-
-// hidden command can't be invoked from the palette, so the handler's first
-// run is necessarily a keypress). The picker runs commands via a direct
-// function call, NOT the registered command, so picking algorithms records
-// nothing — the palette never accumulates clutter from exploration.
+// Two tiers of visibility:
 //
-// Discoverability: the Keyboard Shortcuts editor lists EVERY contributed
-// command regardless of palette `when` gating, so a user can always find and
-// bind any algorithm/codec there even before it's in the palette. After the
-// first keypress it also appears in the palette on every session; the user
-// can prune the list by editing the setting (applied live). Every command is
-// keybindable at all times regardless of visibility.
+//  • SESSION — picking an algorithm/codec from a `.pick` command reveals that
+//    command in the palette for the current window only (so the user can use
+//    the palette's gear to assign a keybinding). It is NOT written to
+//    settings, so a reload hides it again. Exploring via the picker therefore
+//    never permanently clutters the palette.
+//
+//  • PERSISTENT — when the registered command handler itself runs (the user
+//    pressed a keybinding they assigned to it; a still-hidden command cannot
+//    be invoked from the palette, so the handler's run is a keypress), the
+//    command id is written to the user setting
+//    `hashToClipboard.visibleCommands` and stays visible every session until
+//    the user removes it from that setting.
+//
+// Effective visibility = persisted setting ∪ this-session picks. Every
+// command is keybindable at all times regardless of palette visibility.
 // ---------------------------------------------------------------------------
 const VISIBLE_SETTING = 'visibleCommands';
 
@@ -112,6 +115,9 @@ const ALL_COMMAND_IDS = [
   ...ALGORITHMS.map((a) => `hashToClipboard.${a.id}`),
   ...TRANSCODERS.map((t) => `transcode.${t.id}`),
 ];
+
+/** Commands revealed for THIS session only (picker use); not persisted. */
+const sessionVisible = new Set<string>();
 
 /** Context-key name for a command id — must match package.json `when`. */
 function keyFor(commandId: string): string {
@@ -124,31 +130,41 @@ function getVisibleList(): string[] {
     .get<string[]>(VISIBLE_SETTING, []);
 }
 
-/** Apply palette visibility for the whole set from the given id list. */
-function applyVisibility(list: string[]): void {
-  const want = new Set(list);
+/**
+ * Reconcile palette visibility for the whole set:
+ * effective = persisted setting ∪ this-session picks.
+ */
+function applyVisibility(): void {
+  const persisted = new Set(getVisibleList());
   for (const id of ALL_COMMAND_IDS) {
     void vscode.commands.executeCommand(
       'setContext',
       keyFor(id),
-      want.has(id),
+      persisted.has(id) || sessionVisible.has(id),
     );
   }
 }
 
+/** Reveal a command for THIS session only (picker). Not persisted. */
+function promoteSession(commandId: string): void {
+  if (sessionVisible.has(commandId)) {
+    return;
+  }
+  sessionVisible.add(commandId);
+  void vscode.commands.executeCommand('setContext', keyFor(commandId), true);
+}
+
 /**
- * Record a command as visible-from-now-on (persisted to user settings) and
- * reveal it immediately. Called ONLY from the registered command handler —
- * i.e. a keybinding press (or, once visible, the palette). The picker never
- * calls this, so exploring algorithms never clutters the palette.
+ * Persist a command as visible-from-now-on (user settings, Global) and reveal
+ * it. Called ONLY from the registered command handler — i.e. a keybinding
+ * press (a still-hidden command can't be palette-invoked). Stays until the
+ * user removes it from the setting.
  */
 function reveal(commandId: string): void {
   const list = getVisibleList();
   if (list.includes(commandId)) {
     return;
   }
-  // Immediate feedback this session; the config write below also triggers
-  // applyVisibility() via the change listener for full reconciliation.
   void vscode.commands.executeCommand('setContext', keyFor(commandId), true);
   void vscode.workspace
     .getConfiguration('hashToClipboard')
@@ -249,8 +265,9 @@ async function pickHash(): Promise<void> {
     matchOnDescription: true,
   });
   if (choice?.algo) {
-    // Picker runs the hash but records NOTHING — otherwise every algorithm a
-    // user ever tries would accumulate and re-clutter the palette.
+    // Session-only: shows in the palette now (so the user can assign a
+    // keybinding via the gear) but is NOT persisted — gone after reload.
+    promoteSession(`hashToClipboard.${choice.algo.id}`);
     await runHash(choice.algo);
   }
 }
@@ -264,7 +281,8 @@ async function pickTranscode(direction: 'encode' | 'decode'): Promise<void> {
     placeHolder: `Pick a format to ${direction} — result is copied to the clipboard`,
   });
   if (choice) {
-    // Picker runs the codec but records NOTHING (see pickHash).
+    // Session-only (see pickHash).
+    promoteSession(`transcode.${choice.t.id}`);
     await runTranscode(choice.t);
   }
 }
@@ -272,11 +290,11 @@ async function pickTranscode(direction: 'encode' | 'decode'): Promise<void> {
 export function activate(context: vscode.ExtensionContext): void {
   // Apply visibility from the user setting on startup, and keep it in sync if
   // the user edits the list (adds/prunes) in their settings.
-  applyVisibility(getVisibleList());
+  applyVisibility();
   context.subscriptions.push(
     vscode.workspace.onDidChangeConfiguration((e) => {
       if (e.affectsConfiguration(`hashToClipboard.${VISIBLE_SETTING}`)) {
-        applyVisibility(getVisibleList());
+        applyVisibility();
       }
     }),
   );
