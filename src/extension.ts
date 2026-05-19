@@ -87,51 +87,67 @@ async function getInputText(cfg: HashConfig): Promise<string | null> {
 }
 
 // ---------------------------------------------------------------------------
-// Command Palette declutter: only the 3 pickers are visible by default. The
-// specific per-algorithm / per-codec commands are declared in package.json
-// but their palette visibility is gated by a `when` context key. The first
-// time the user runs one (via a picker OR a keybinding), we flip its key on
-// so it appears in the palette — for THIS session only. Context keys set via
-// `setContext` are not persisted, so a window reload reverts to just the
-// pickers. Every command stays keybindable at all times regardless.
+// Command Palette declutter. Only the 3 pickers are visible by default. Every
+// specific per-algorithm / per-codec command is declared in package.json but
+// its palette visibility is gated by a `when` context key.
+//
+// The FIRST time the user runs a specific command (normally by choosing it
+// from a picker), we record its id into the user setting
+// `hashToClipboard.visibleCommands`. From then on it is shown in the palette
+// on every session — the user can then assign a keybinding to it via the
+// normal UI, and can prune the list by editing that setting. Every command
+// stays directly keybindable at all times regardless of visibility.
 // ---------------------------------------------------------------------------
-const PERSIST_KEY = 'hashExt.permanentCommands';
-const promoted = new Set<string>();
-let extContext: vscode.ExtensionContext | undefined;
+const VISIBLE_SETTING = 'visibleCommands';
+
+const ALL_COMMAND_IDS = [
+  ...ALGORITHMS.map((a) => `hashToClipboard.${a.id}`),
+  ...TRANSCODERS.map((t) => `transcode.${t.id}`),
+];
 
 /** Context-key name for a command id — must match package.json `when`. */
 function keyFor(commandId: string): string {
   return `hashExt.cmd.${commandId.replace(/[^A-Za-z0-9]/g, '_')}`;
 }
 
-/** Make a command visible in the palette for THIS session only. */
-function promoteSession(commandId: string): void {
-  if (promoted.has(commandId)) {
-    return;
+function getVisibleList(): string[] {
+  return vscode.workspace
+    .getConfiguration('hashToClipboard')
+    .get<string[]>(VISIBLE_SETTING, []);
+}
+
+/** Apply palette visibility for the whole set from the given id list. */
+function applyVisibility(list: string[]): void {
+  const want = new Set(list);
+  for (const id of ALL_COMMAND_IDS) {
+    void vscode.commands.executeCommand(
+      'setContext',
+      keyFor(id),
+      want.has(id),
+    );
   }
-  promoted.add(commandId);
-  // Session-scoped: context keys set via setContext are not persisted, so a
-  // window reload reverts these to hidden. Fire-and-forget.
-  void vscode.commands.executeCommand('setContext', keyFor(commandId), true);
 }
 
 /**
- * Pin a command's palette visibility PERMANENTLY (persists across reloads via
- * globalState). Used when the command is invoked DIRECTLY — i.e. via a user
- * keybinding (the only way to trigger a still-hidden command) or the palette.
- * VSCode exposes no API to read keybindings.json, so direct invocation is the
- * reliable proxy for "the user wired this up and wants it to stay".
+ * Record a command as visible-from-now-on (persisted to the user's settings)
+ * and reveal it immediately. Called whenever a specific command runs — via a
+ * picker, a keybinding, or the palette — so the first use makes it stick.
  */
-function promotePermanent(commandId: string): void {
-  promoteSession(commandId);
-  const ctx = extContext;
-  if (!ctx) {
+function reveal(commandId: string): void {
+  const list = getVisibleList();
+  if (list.includes(commandId)) {
     return;
   }
-  const list = ctx.globalState.get<string[]>(PERSIST_KEY, []);
-  if (!list.includes(commandId)) {
-    void ctx.globalState.update(PERSIST_KEY, [...list, commandId]);
-  }
+  // Immediate feedback this session; the config write below also triggers
+  // applyVisibility() via the change listener for full reconciliation.
+  void vscode.commands.executeCommand('setContext', keyFor(commandId), true);
+  void vscode.workspace
+    .getConfiguration('hashToClipboard')
+    .update(
+      VISIBLE_SETTING,
+      [...list, commandId],
+      vscode.ConfigurationTarget.Global,
+    );
 }
 
 async function runHash(algo: HashAlgo): Promise<void> {
@@ -224,8 +240,7 @@ async function pickHash(): Promise<void> {
     matchOnDescription: true,
   });
   if (choice?.algo) {
-    // Picked via the picker → visible for this session only.
-    promoteSession(`hashToClipboard.${choice.algo.id}`);
+    reveal(`hashToClipboard.${choice.algo.id}`);
     await runHash(choice.algo);
   }
 }
@@ -239,29 +254,30 @@ async function pickTranscode(direction: 'encode' | 'decode'): Promise<void> {
     placeHolder: `Pick a format to ${direction} — result is copied to the clipboard`,
   });
   if (choice) {
-    // Picked via the picker → visible for this session only.
-    promoteSession(`transcode.${choice.t.id}`);
+    reveal(`transcode.${choice.t.id}`);
     await runTranscode(choice.t);
   }
 }
 
 export function activate(context: vscode.ExtensionContext): void {
-  extContext = context;
+  // Apply visibility from the user setting on startup, and keep it in sync if
+  // the user edits the list (adds/prunes) in their settings.
+  applyVisibility(getVisibleList());
+  context.subscriptions.push(
+    vscode.workspace.onDidChangeConfiguration((e) => {
+      if (e.affectsConfiguration(`hashToClipboard.${VISIBLE_SETTING}`)) {
+        applyVisibility(getVisibleList());
+      }
+    }),
+  );
 
-  // Restore permanently-pinned commands (set on a previous session via a
-  // direct/keybinding invocation) so they stay visible across reloads.
-  for (const id of context.globalState.get<string[]>(PERSIST_KEY, [])) {
-    promoted.add(id);
-    void vscode.commands.executeCommand('setContext', keyFor(id), true);
-  }
-
-  // Direct invocation of a specific command (keybinding or palette) pins it
-  // permanently; selecting it from a picker only reveals it for the session.
+  // Any invocation of a specific command (picker, keybinding, or palette)
+  // records it into the user setting on first use → visible from then on.
   for (const algo of ALGORITHMS) {
     const id = `hashToClipboard.${algo.id}`;
     context.subscriptions.push(
       vscode.commands.registerCommand(id, () => {
-        promotePermanent(id);
+        reveal(id);
         return runHash(algo);
       }),
     );
@@ -271,7 +287,7 @@ export function activate(context: vscode.ExtensionContext): void {
     const id = `transcode.${t.id}`;
     context.subscriptions.push(
       vscode.commands.registerCommand(id, () => {
-        promotePermanent(id);
+        reveal(id);
         return runTranscode(t);
       }),
     );

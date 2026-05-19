@@ -230,6 +230,12 @@
             "Concatenate all non-empty selections in document order, joined by newlines."
           ],
           "description": "Behavior when there are multiple selections / cursors."
+        },
+        "hashToClipboard.visibleCommands": {
+          "type": "array",
+          "items": { "type": "string" },
+          "default": [],
+          "description": "Command IDs shown in the Command Palette. Auto-recorded the first time you run a specific algorithm/codec (e.g. via a 'Pick' command). Edit/prune this list to control palette clutter; the 3 'Pick' commands are always shown and every command is keybindable regardless."
         }
       }
     }
