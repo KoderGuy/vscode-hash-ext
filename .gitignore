@@ -3,4 +3,5 @@ out/
 qa/embedded-data.mjs
 qa/.staging-qa/
 *.vsix
+.vsix-build.json
 .DS_Store

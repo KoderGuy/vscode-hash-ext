@@ -212,7 +212,7 @@
     "build:qa": "node esbuild.mjs --qa",
     "qa:promote": "node qa/promote-qa.mjs",
     "qa:algorithms": "node qa-dist/qa.pkg.mjs out/extension.js",
-    "package": "vsce package --allow-missing-repository --no-rewrite-relative-links",
+    "package": "node scripts/package-vsix.mjs",
     "release": "echo 'npm run check && npm run build:extension && npm run qa:algorithms && npm run package'",
     "build:certify": "npm run check && npm run build:extension && npm run qa:algorithms",
     "build:ext:pkg": "npm run build:extension && npm run package"
