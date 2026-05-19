@@ -87,37 +87,37 @@ async function getInputText(cfg: HashConfig): Promise<string | null> {
 }
 
 // ---------------------------------------------------------------------------
-// Command Palette declutter. Only the 3 pickers are visible by default. Every
-// specific per-algorithm / per-codec command is declared in package.json but
-// its palette visibility is gated by a `when` context key.
+// Command Palette declutter — explicit and deterministic, no heuristics.
 //
-// Two tiers of visibility:
+// Always visible: the 3 pickers (run any algo/codec without palette clutter)
+// and 2 management commands. Every specific per-algorithm / per-codec command
+// is declared in package.json but gated by a `when` context key, controlled
+// solely by the user setting `hashToClipboard.visibleCommands`:
 //
-//  • SESSION — picking an algorithm/codec from a `.pick` command reveals that
-//    command in the palette for the current window only (so the user can use
-//    the palette's gear to assign a keybinding). It is NOT written to
-//    settings, so a reload hides it again. Exploring via the picker therefore
-//    never permanently clutters the palette.
+//  • "Show Command in Palette…"  → add chosen commands to the setting.
+//  • "Hide Command from Palette…" → remove chosen commands.
 //
-//  • PERSISTENT — when the registered command handler itself runs (the user
-//    pressed a keybinding they assigned to it; a still-hidden command cannot
-//    be invoked from the palette, so the handler's run is a keypress), the
-//    command id is written to the user setting
-//    `hashToClipboard.visibleCommands` and stays visible every session until
-//    the user removes it from that setting.
-//
-// Effective visibility = persisted setting ∪ this-session picks. Every
+// The user can also edit the setting directly; changes apply live. Once a
+// command is shown it can be given a keybinding via the normal UI. Every
 // command is keybindable at all times regardless of palette visibility.
 // ---------------------------------------------------------------------------
 const VISIBLE_SETTING = 'visibleCommands';
 
-const ALL_COMMAND_IDS = [
-  ...ALGORITHMS.map((a) => `hashToClipboard.${a.id}`),
-  ...TRANSCODERS.map((t) => `transcode.${t.id}`),
+interface CommandChoice {
+  id: string;
+  label: string;
+}
+const COMMAND_CHOICES: CommandChoice[] = [
+  ...ALGORITHMS.map((a) => ({
+    id: `hashToClipboard.${a.id}`,
+    label: `Hash: ${a.label}${a.legacy ? ' (insecure)' : ''}`,
+  })),
+  ...TRANSCODERS.map((t) => ({
+    id: `transcode.${t.id}`,
+    label: `${t.direction === 'encode' ? 'Encode' : 'Decode'}: ${t.label}`,
+  })),
 ];
-
-/** Commands revealed for THIS session only (picker use); not persisted. */
-const sessionVisible = new Set<string>();
+const ALL_COMMAND_IDS = COMMAND_CHOICES.map((c) => c.id);
 
 /** Context-key name for a command id — must match package.json `when`. */
 function keyFor(commandId: string): string {
@@ -130,49 +130,71 @@ function getVisibleList(): string[] {
     .get<string[]>(VISIBLE_SETTING, []);
 }
 
-/**
- * Reconcile palette visibility for the whole set:
- * effective = persisted setting ∪ this-session picks.
- */
+async function setVisibleList(ids: string[]): Promise<void> {
+  await vscode.workspace
+    .getConfiguration('hashToClipboard')
+    .update(VISIBLE_SETTING, ids, vscode.ConfigurationTarget.Global);
+}
+
+/** Drive palette visibility entirely from the persisted setting. */
 function applyVisibility(): void {
-  const persisted = new Set(getVisibleList());
+  const visible = new Set(getVisibleList());
   for (const id of ALL_COMMAND_IDS) {
     void vscode.commands.executeCommand(
       'setContext',
       keyFor(id),
-      persisted.has(id) || sessionVisible.has(id),
+      visible.has(id),
     );
   }
 }
 
-/** Reveal a command for THIS session only (picker). Not persisted. */
-function promoteSession(commandId: string): void {
-  if (sessionVisible.has(commandId)) {
+type ChoiceItem = vscode.QuickPickItem & { id: string };
+
+async function manageShow(): Promise<void> {
+  const visible = new Set(getVisibleList());
+  const items: ChoiceItem[] = COMMAND_CHOICES.filter(
+    (c) => !visible.has(c.id),
+  ).map((c) => ({ label: c.label, id: c.id }));
+  if (items.length === 0) {
+    vscode.window.showInformationMessage(
+      'Every command is already shown in the Command Palette.',
+    );
     return;
   }
-  sessionVisible.add(commandId);
-  void vscode.commands.executeCommand('setContext', keyFor(commandId), true);
+  const picked = await vscode.window.showQuickPick(items, {
+    canPickMany: true,
+    placeHolder: 'Select commands to SHOW in the Command Palette',
+  });
+  if (!picked || picked.length === 0) {
+    return;
+  }
+  await setVisibleList([...getVisibleList(), ...picked.map((p) => p.id)]);
+  applyVisibility();
 }
 
-/**
- * Persist a command as visible-from-now-on (user settings, Global) and reveal
- * it. Called ONLY from the registered command handler — i.e. a keybinding
- * press (a still-hidden command can't be palette-invoked). Stays until the
- * user removes it from the setting.
- */
-function reveal(commandId: string): void {
+async function manageHide(): Promise<void> {
   const list = getVisibleList();
-  if (list.includes(commandId)) {
+  if (list.length === 0) {
+    vscode.window.showInformationMessage(
+      'No optional commands are currently shown (only the pickers/managers).',
+    );
     return;
   }
-  void vscode.commands.executeCommand('setContext', keyFor(commandId), true);
-  void vscode.workspace
-    .getConfiguration('hashToClipboard')
-    .update(
-      VISIBLE_SETTING,
-      [...list, commandId],
-      vscode.ConfigurationTarget.Global,
-    );
+  const byId = new Map(COMMAND_CHOICES.map((c) => [c.id, c.label]));
+  const items: ChoiceItem[] = list.map((id) => ({
+    label: byId.get(id) ?? id,
+    id,
+  }));
+  const picked = await vscode.window.showQuickPick(items, {
+    canPickMany: true,
+    placeHolder: 'Select commands to HIDE from the Command Palette',
+  });
+  if (!picked || picked.length === 0) {
+    return;
+  }
+  const remove = new Set(picked.map((p) => p.id));
+  await setVisibleList(list.filter((id) => !remove.has(id)));
+  applyVisibility();
 }
 
 async function runHash(algo: HashAlgo): Promise<void> {
@@ -265,9 +287,6 @@ async function pickHash(): Promise<void> {
     matchOnDescription: true,
   });
   if (choice?.algo) {
-    // Session-only: shows in the palette now (so the user can assign a
-    // keybinding via the gear) but is NOT persisted — gone after reload.
-    promoteSession(`hashToClipboard.${choice.algo.id}`);
     await runHash(choice.algo);
   }
 }
@@ -281,8 +300,6 @@ async function pickTranscode(direction: 'encode' | 'decode'): Promise<void> {
     placeHolder: `Pick a format to ${direction} — result is copied to the clipboard`,
   });
   if (choice) {
-    // Session-only (see pickHash).
-    promoteSession(`transcode.${choice.t.id}`);
     await runTranscode(choice.t);
   }
 }
@@ -299,25 +316,21 @@ export function activate(context: vscode.ExtensionContext): void {
     }),
   );
 
-  // Any invocation of a specific command (picker, keybinding, or palette)
-  // records it into the user setting on first use → visible from then on.
+  // Specific commands just run — visibility is managed explicitly via the
+  // settings list / the Show/Hide commands, never implicitly.
   for (const algo of ALGORITHMS) {
-    const id = `hashToClipboard.${algo.id}`;
     context.subscriptions.push(
-      vscode.commands.registerCommand(id, () => {
-        reveal(id);
-        return runHash(algo);
-      }),
+      vscode.commands.registerCommand(`hashToClipboard.${algo.id}`, () =>
+        runHash(algo),
+      ),
     );
   }
 
   for (const t of TRANSCODERS) {
-    const id = `transcode.${t.id}`;
     context.subscriptions.push(
-      vscode.commands.registerCommand(id, () => {
-        reveal(id);
-        return runTranscode(t);
-      }),
+      vscode.commands.registerCommand(`transcode.${t.id}`, () =>
+        runTranscode(t),
+      ),
     );
   }
 
@@ -329,6 +342,8 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.commands.registerCommand('transcode.pickDecode', () =>
       pickTranscode('decode'),
     ),
+    vscode.commands.registerCommand('hashToClipboard.showCommand', manageShow),
+    vscode.commands.registerCommand('hashToClipboard.hideCommand', manageHide),
   );
 }
 

@@ -31,6 +31,16 @@
         "title": "Hash: Pick Algorithm → Clipboard"
       },
       {
+        "command": "hashToClipboard.showCommand",
+        "category": "Hash & Transcode",
+        "title": "Show Command in Palette…"
+      },
+      {
+        "command": "hashToClipboard.hideCommand",
+        "category": "Hash & Transcode",
+        "title": "Hide Command from Palette…"
+      },
+      {
         "command": "hashToClipboard.sha256",
         "category": "Hash & Transcode",
         "title": "Hash Selection: SHA-256 → Clipboard"
