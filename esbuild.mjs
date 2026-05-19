@@ -22,10 +22,16 @@ const watch = has('--watch');
 const vscodeShim = {
   name: 'vscode-graceful-shim',
   setup(b) {
-    b.onResolve({ filter: /^vscode$/ }, () => ({
-      path: 'vscode',
-      namespace: 'vscode-shim',
-    }));
+    b.onResolve({ filter: /^vscode$/ }, (args) => {
+      // The require('vscode') INSIDE the shim must reach the REAL module
+      // loader (the editor provides it) — not loop back into the shim.
+      // Without this guard the shim self-references and `vscode` is always
+      // {}, so activate() throws and no commands register.
+      if (args.namespace === 'vscode-shim') {
+        return { path: 'vscode', external: true };
+      }
+      return { path: 'vscode', namespace: 'vscode-shim' };
+    });
     b.onLoad({ filter: /.*/, namespace: 'vscode-shim' }, () => ({
       contents:
         'let v; try { v = require("vscode"); } catch { v = {}; } ' +
