@@ -12,35 +12,19 @@ const watch = has('--watch');
 // Algorithms (@noble/hashes, pure-JS) are bundled IN, so there is no separate
 // algorithms.js and no host-crypto dependency. QA certifies THIS exact file.
 //
-// `vscode` is resolved to a graceful shim instead of left external: in the
-// editor `require('vscode')` returns the real API; under plain Node (the QA
-// package require()s extension.js) it can't resolve, so the shim returns {}.
-// extension.ts only touches vscode inside command handlers / activate(), so
-// merely loading the module to read its exports never hits the editor API.
-// This is what lets the UNALTERED QA package certify the bundled file.
+// `vscode` is a STANDARD external (the editor host provides it at runtime —
+// the proven, normal way every VSCode extension is built). The QA harness
+// loads this same file under plain Node via a process-level 'vscode' stub
+// preload (qa/vscode-stub.cjs, added by the npm script's `node -r` flag);
+// the committed QA package is never altered.
 // ---------------------------------------------------------------------------
-const vscodeShim = {
-  name: 'vscode-graceful-shim',
-  setup(b) {
-    b.onResolve({ filter: /^vscode$/ }, (args) => {
-      // The require('vscode') INSIDE the shim must reach the REAL module
-      // loader (the editor provides it) — not loop back into the shim.
-      // Without this guard the shim self-references and `vscode` is always
-      // {}, so activate() throws and no commands register.
-      if (args.namespace === 'vscode-shim') {
-        return { path: 'vscode', external: true };
-      }
-      return { path: 'vscode', namespace: 'vscode-shim' };
-    });
-    b.onLoad({ filter: /.*/, namespace: 'vscode-shim' }, () => ({
-      contents:
-        'let v; try { v = require("vscode"); } catch { v = {}; } ' +
-        'module.exports = v;',
-      loader: 'js',
-    }));
-  },
-};
-
+// `vscode` is a STANDARD external (exactly how every VSCode extension — and
+// our previously-working packages — are built; the editor's host provides it
+// at runtime). No custom shim: the shim was the only structural difference
+// vs the working builds and it broke editor activation. The QA harness loads
+// this same file under plain Node via a process-level 'vscode' stub preload
+// (qa/vscode-stub.cjs, invoked by the npm script) — the committed QA package
+// itself is never altered.
 async function buildExtension(min = true) {
   await esbuild.build({
     entryPoints: ['src/extension.ts'],
@@ -49,7 +33,7 @@ async function buildExtension(min = true) {
     platform: 'node',
     target: 'node22',
     format: 'cjs',
-    plugins: [vscodeShim],
+    external: ['vscode'],
     minify: min,
     sourcemap: !min,
     logLevel: 'info',
@@ -161,7 +145,7 @@ if (has('--qa')) {
     platform: 'node',
     target: 'node22',
     format: 'cjs',
-    plugins: [vscodeShim],
+    external: ['vscode'],
     minify: false,
     sourcemap: true,
     logLevel: 'info',

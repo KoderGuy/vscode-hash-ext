@@ -6,7 +6,7 @@
   "publisher": "local",
   "license": "MIT",
   "engines": {
-    "vscode": "^1.74.0"
+    "vscode": "^1.107.0"
   },
   "categories": [
     "Other"
@@ -211,7 +211,7 @@
     "watch": "node esbuild.mjs --watch",
     "build:qa": "node esbuild.mjs --qa",
     "qa:promote": "node qa/promote-qa.mjs",
-    "qa:algorithms": "node qa-dist/qa.pkg.mjs out/extension.js",
+    "qa:algorithms": "node -r ./qa/vscode-stub.cjs qa-dist/qa.pkg.mjs out/extension.js",
     "package": "node scripts/package-vsix.mjs",
     "release": "echo 'npm run check && npm run build:extension && npm run qa:algorithms && npm run package'",
     "build:certify": "npm run check && npm run build:extension && npm run qa:algorithms",
@@ -220,7 +220,7 @@
   "devDependencies": {
     "@noble/hashes": "^2.2.0",
     "@types/node": "^22.1.1",
-    "@types/vscode": "^1.74.0",
+    "@types/vscode": "^1.107.0",
     "@vscode/vsce": "^3.9.1",
     "esbuild": "^0.28.0",
     "typescript": "^6.0.3"
