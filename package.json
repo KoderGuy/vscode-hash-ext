@@ -166,6 +166,35 @@
         "title": "Decode: HTML Entities → Clipboard"
       }
     ],
+    "menus": {
+      "commandPalette": [
+        { "command": "hashToClipboard.sha256", "when": "hashExt.cmd.hashToClipboard_sha256" },
+        { "command": "hashToClipboard.sha384", "when": "hashExt.cmd.hashToClipboard_sha384" },
+        { "command": "hashToClipboard.sha512", "when": "hashExt.cmd.hashToClipboard_sha512" },
+        { "command": "hashToClipboard.sha512_256", "when": "hashExt.cmd.hashToClipboard_sha512_256" },
+        { "command": "hashToClipboard.sha3_224", "when": "hashExt.cmd.hashToClipboard_sha3_224" },
+        { "command": "hashToClipboard.sha3_256", "when": "hashExt.cmd.hashToClipboard_sha3_256" },
+        { "command": "hashToClipboard.sha3_384", "when": "hashExt.cmd.hashToClipboard_sha3_384" },
+        { "command": "hashToClipboard.sha3_512", "when": "hashExt.cmd.hashToClipboard_sha3_512" },
+        { "command": "hashToClipboard.blake2b512", "when": "hashExt.cmd.hashToClipboard_blake2b512" },
+        { "command": "hashToClipboard.blake2s256", "when": "hashExt.cmd.hashToClipboard_blake2s256" },
+        { "command": "hashToClipboard.sha224", "when": "hashExt.cmd.hashToClipboard_sha224" },
+        { "command": "hashToClipboard.sha512_224", "when": "hashExt.cmd.hashToClipboard_sha512_224" },
+        { "command": "hashToClipboard.ripemd160", "when": "hashExt.cmd.hashToClipboard_ripemd160" },
+        { "command": "hashToClipboard.sha1", "when": "hashExt.cmd.hashToClipboard_sha1" },
+        { "command": "hashToClipboard.md5", "when": "hashExt.cmd.hashToClipboard_md5" },
+        { "command": "transcode.base64Encode", "when": "hashExt.cmd.transcode_base64Encode" },
+        { "command": "transcode.base64Decode", "when": "hashExt.cmd.transcode_base64Decode" },
+        { "command": "transcode.base64urlEncode", "when": "hashExt.cmd.transcode_base64urlEncode" },
+        { "command": "transcode.base64urlDecode", "when": "hashExt.cmd.transcode_base64urlDecode" },
+        { "command": "transcode.urlEncode", "when": "hashExt.cmd.transcode_urlEncode" },
+        { "command": "transcode.urlDecode", "when": "hashExt.cmd.transcode_urlDecode" },
+        { "command": "transcode.hexEncode", "when": "hashExt.cmd.transcode_hexEncode" },
+        { "command": "transcode.hexDecode", "when": "hashExt.cmd.transcode_hexDecode" },
+        { "command": "transcode.htmlEncode", "when": "hashExt.cmd.transcode_htmlEncode" },
+        { "command": "transcode.htmlDecode", "when": "hashExt.cmd.transcode_htmlDecode" }
+      ]
+    },
     "configuration": {
       "title": "Hash & Transcode to Clipboard",
       "properties": {

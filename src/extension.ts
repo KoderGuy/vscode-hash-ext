@@ -86,6 +86,54 @@ async function getInputText(cfg: HashConfig): Promise<string | null> {
   return text;
 }
 
+// ---------------------------------------------------------------------------
+// Command Palette declutter: only the 3 pickers are visible by default. The
+// specific per-algorithm / per-codec commands are declared in package.json
+// but their palette visibility is gated by a `when` context key. The first
+// time the user runs one (via a picker OR a keybinding), we flip its key on
+// so it appears in the palette — for THIS session only. Context keys set via
+// `setContext` are not persisted, so a window reload reverts to just the
+// pickers. Every command stays keybindable at all times regardless.
+// ---------------------------------------------------------------------------
+const PERSIST_KEY = 'hashExt.permanentCommands';
+const promoted = new Set<string>();
+let extContext: vscode.ExtensionContext | undefined;
+
+/** Context-key name for a command id — must match package.json `when`. */
+function keyFor(commandId: string): string {
+  return `hashExt.cmd.${commandId.replace(/[^A-Za-z0-9]/g, '_')}`;
+}
+
+/** Make a command visible in the palette for THIS session only. */
+function promoteSession(commandId: string): void {
+  if (promoted.has(commandId)) {
+    return;
+  }
+  promoted.add(commandId);
+  // Session-scoped: context keys set via setContext are not persisted, so a
+  // window reload reverts these to hidden. Fire-and-forget.
+  void vscode.commands.executeCommand('setContext', keyFor(commandId), true);
+}
+
+/**
+ * Pin a command's palette visibility PERMANENTLY (persists across reloads via
+ * globalState). Used when the command is invoked DIRECTLY — i.e. via a user
+ * keybinding (the only way to trigger a still-hidden command) or the palette.
+ * VSCode exposes no API to read keybindings.json, so direct invocation is the
+ * reliable proxy for "the user wired this up and wants it to stay".
+ */
+function promotePermanent(commandId: string): void {
+  promoteSession(commandId);
+  const ctx = extContext;
+  if (!ctx) {
+    return;
+  }
+  const list = ctx.globalState.get<string[]>(PERSIST_KEY, []);
+  if (!list.includes(commandId)) {
+    void ctx.globalState.update(PERSIST_KEY, [...list, commandId]);
+  }
+}
+
 async function runHash(algo: HashAlgo): Promise<void> {
   try {
     // Every algorithm is bundled (@noble/hashes), so all are always
@@ -176,6 +224,8 @@ async function pickHash(): Promise<void> {
     matchOnDescription: true,
   });
   if (choice?.algo) {
+    // Picked via the picker → visible for this session only.
+    promoteSession(`hashToClipboard.${choice.algo.id}`);
     await runHash(choice.algo);
   }
 }
@@ -189,24 +239,41 @@ async function pickTranscode(direction: 'encode' | 'decode'): Promise<void> {
     placeHolder: `Pick a format to ${direction} — result is copied to the clipboard`,
   });
   if (choice) {
+    // Picked via the picker → visible for this session only.
+    promoteSession(`transcode.${choice.t.id}`);
     await runTranscode(choice.t);
   }
 }
 
 export function activate(context: vscode.ExtensionContext): void {
+  extContext = context;
+
+  // Restore permanently-pinned commands (set on a previous session via a
+  // direct/keybinding invocation) so they stay visible across reloads.
+  for (const id of context.globalState.get<string[]>(PERSIST_KEY, [])) {
+    promoted.add(id);
+    void vscode.commands.executeCommand('setContext', keyFor(id), true);
+  }
+
+  // Direct invocation of a specific command (keybinding or palette) pins it
+  // permanently; selecting it from a picker only reveals it for the session.
   for (const algo of ALGORITHMS) {
+    const id = `hashToClipboard.${algo.id}`;
     context.subscriptions.push(
-      vscode.commands.registerCommand(`hashToClipboard.${algo.id}`, () =>
-        runHash(algo),
-      ),
+      vscode.commands.registerCommand(id, () => {
+        promotePermanent(id);
+        return runHash(algo);
+      }),
     );
   }
 
   for (const t of TRANSCODERS) {
+    const id = `transcode.${t.id}`;
     context.subscriptions.push(
-      vscode.commands.registerCommand(`transcode.${t.id}`, () =>
-        runTranscode(t),
-      ),
+      vscode.commands.registerCommand(id, () => {
+        promotePermanent(id);
+        return runTranscode(t);
+      }),
     );
   }
 
