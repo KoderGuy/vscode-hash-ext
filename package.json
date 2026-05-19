@@ -6,7 +6,7 @@
   "publisher": "local",
   "license": "MIT",
   "engines": {
-    "vscode": "^1.107.0"
+    "vscode": "^1.74.0"
   },
   "categories": [
     "Other"
@@ -220,7 +220,7 @@
   "devDependencies": {
     "@noble/hashes": "^2.2.0",
     "@types/node": "^22.1.1",
-    "@types/vscode": "^1.107.0",
+    "@types/vscode": "^1.74.0",
     "@vscode/vsce": "^3.9.1",
     "esbuild": "^0.28.0",
     "typescript": "^6.0.3"
