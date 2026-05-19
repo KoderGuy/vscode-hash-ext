@@ -8,7 +8,14 @@
  * exercise the exact production logic (see qa/).
  */
 
-import * as crypto from 'crypto';
+// Hash implementations are BUNDLED (audited @noble/hashes, pure-JS) so every
+// algorithm works identically in any host — system Node, VSCode, Cursor,
+// Antigravity — independent of the runtime's OpenSSL/BoringSSL. esbuild
+// inlines these into the single shipped artifact.
+import { sha224, sha256, sha384, sha512, sha512_224, sha512_256 } from '@noble/hashes/sha2.js';
+import { sha3_224, sha3_256, sha3_384, sha3_512 } from '@noble/hashes/sha3.js';
+import { blake2b, blake2s } from '@noble/hashes/blake2.js';
+import { md5, ripemd160, sha1 } from '@noble/hashes/legacy.js';
 
 export type DigestEncoding = 'hex' | 'base64' | 'base64url';
 
@@ -16,7 +23,7 @@ export type DigestEncoding = 'hex' | 'base64' | 'base64url';
 export interface HashAlgo {
   /** Command-id suffix: `hashToClipboard.<id>`. Safe chars only. */
   id: string;
-  /** Name passed to Node `crypto.createHash()`. */
+  /** Canonical algorithm key — the dispatch key and baseline key. */
   cryptoName: string;
   /** Human label shown in titles / QuickPick. */
   label: string;
@@ -38,14 +45,34 @@ export const ALGORITHMS: HashAlgo[] = [
   { id: 'sha224', cryptoName: 'sha224', label: 'SHA-224' },
   { id: 'sha512_224', cryptoName: 'sha512-224', label: 'SHA-512/224' },
   { id: 'ripemd160', cryptoName: 'ripemd160', label: 'RIPEMD-160' },
-  { id: 'sm3', cryptoName: 'sm3', label: 'SM3' },
   { id: 'sha1', cryptoName: 'sha1', label: 'SHA-1', legacy: true },
   { id: 'md5', cryptoName: 'md5', label: 'MD5', legacy: true },
 ];
 
+type HashFn = (input: Uint8Array) => Uint8Array;
+
+/** cryptoName → bundled implementation. The single source of dispatch. */
+const ENGINE: Record<string, HashFn> = {
+  sha224,
+  sha256,
+  sha384,
+  sha512,
+  'sha512-224': sha512_224,
+  'sha512-256': sha512_256,
+  'sha3-224': sha3_224,
+  'sha3-256': sha3_256,
+  'sha3-384': sha3_384,
+  'sha3-512': sha3_512,
+  blake2b512: (b) => blake2b(b, { dkLen: 64 }),
+  blake2s256: (b) => blake2s(b, { dkLen: 32 }),
+  ripemd160,
+  sha1,
+  md5,
+};
+
 /**
  * The exact production hash path. The extension calls this; the QA harness
- * tests this same function — there is no second implementation to drift.
+ * certifies this same function — there is no second implementation to drift.
  * Input is hashed as UTF-8. `uppercase` applies only to hex output.
  */
 export function computeDigest(
@@ -54,10 +81,12 @@ export function computeDigest(
   encoding: DigestEncoding,
   uppercase: boolean,
 ): string {
-  const digest = crypto
-    .createHash(cryptoName)
-    .update(text, 'utf8')
-    .digest(encoding);
+  const fn = ENGINE[cryptoName];
+  if (!fn) {
+    throw new Error(`Unsupported hash algorithm: ${cryptoName}`);
+  }
+  const out = fn(new TextEncoder().encode(text));
+  const digest = Buffer.from(out).toString(encoding);
   return uppercase && encoding === 'hex' ? digest.toUpperCase() : digest;
 }
 

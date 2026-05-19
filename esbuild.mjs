@@ -1,45 +1,36 @@
 import * as esbuild from 'esbuild';
-import * as crypto from 'crypto';
-import * as fs from 'fs';
-import * as path from 'path';
+import * as crypto from 'node:crypto';
+import * as fs from 'node:fs';
+import * as path from 'node:path';
 
 const args = process.argv.slice(2);
 const has = (f) => args.includes(f);
 const watch = has('--watch');
 
 // ---------------------------------------------------------------------------
-// out/algorithms.js  — THE trusted component.
-// One deterministic build of src/algorithms.ts. The QA tool certifies THIS
-// exact file; the extension is then built to load THIS exact file. There is
-// no second copy of the hash/transcoder logic anywhere.
+// out/extension.js — the ONE shipped artifact and the ONLY .js in the .vsix.
+// Algorithms (@noble/hashes, pure-JS) are bundled IN, so there is no separate
+// algorithms.js and no host-crypto dependency. QA certifies THIS exact file.
+//
+// `vscode` is resolved to a graceful shim instead of left external: in the
+// editor `require('vscode')` returns the real API; under plain Node (the QA
+// package require()s extension.js) it can't resolve, so the shim returns {}.
+// extension.ts only touches vscode inside command handlers / activate(), so
+// merely loading the module to read its exports never hits the editor API.
+// This is what lets the UNALTERED QA package certify the bundled file.
 // ---------------------------------------------------------------------------
-async function buildAlgorithms(min = true) {
-  await esbuild.build({
-    entryPoints: ['src/algorithms.ts'],
-    bundle: true,
-    outfile: 'out/algorithms.js',
-    platform: 'node',
-    target: 'node20',
-    format: 'cjs',
-    minify: min,
-    sourcemap: false,
-    logLevel: 'info',
-  });
-  console.log('esbuild: trusted component written to out/algorithms.js');
-}
-
-// ---------------------------------------------------------------------------
-// out/extension.js — the VSCode entry. It does NOT re-bundle the algorithm
-// logic: the `./algorithms` import is externalised to `./algorithms.js`, so
-// the shipped extension loads the SAME certified out/algorithms.js at runtime.
-// Both files ship in the .vsix (extension/out/).
-// ---------------------------------------------------------------------------
-const externalizeAlgorithms = {
-  name: 'externalize-algorithms',
+const vscodeShim = {
+  name: 'vscode-graceful-shim',
   setup(b) {
-    b.onResolve({ filter: /^\.\/algorithms$/ }, () => ({
-      path: './algorithms.js',
-      external: true,
+    b.onResolve({ filter: /^vscode$/ }, () => ({
+      path: 'vscode',
+      namespace: 'vscode-shim',
+    }));
+    b.onLoad({ filter: /.*/, namespace: 'vscode-shim' }, () => ({
+      contents:
+        'let v; try { v = require("vscode"); } catch { v = {}; } ' +
+        'module.exports = v;',
+      loader: 'js',
     }));
   },
 };
@@ -50,15 +41,14 @@ async function buildExtension(min = true) {
     bundle: true,
     outfile: 'out/extension.js',
     platform: 'node',
-    target: 'node20',
+    target: 'node22',
     format: 'cjs',
-    external: ['vscode'],
-    plugins: [externalizeAlgorithms],
+    plugins: [vscodeShim],
     minify: min,
     sourcemap: !min,
     logLevel: 'info',
   });
-  console.log('esbuild: extension written to out/extension.js (loads ./algorithms.js)');
+  console.log('esbuild: single bundled extension written to out/extension.js');
 }
 
 // ---------------------------------------------------------------------------
@@ -87,7 +77,7 @@ async function buildQaPackage() {
   if (missing.length) {
     console.error(
       'FATAL  algorithms unavailable in this Node/OpenSSL build: ' +
-        missing.map((a) => a.cryptoName).join(', '),
+      missing.map((a) => a.cryptoName).join(', '),
     );
     process.exit(1);
   }
@@ -134,7 +124,7 @@ async function buildQaPackage() {
     bundle: true,
     outfile,
     platform: 'node',
-    target: 'node20',
+    target: 'node22',
     format: 'esm',
     minify: true,
     sourcemap: false,
@@ -145,52 +135,34 @@ async function buildQaPackage() {
   const n = testStrings.strings.length * ALGORITHMS.length * 2;
   console.log(
     `esbuild: QA package (json+js) written to ${outfile}\n` +
-      `  embedded ${testStrings.strings.length} strings x ${ALGORITHMS.length} ` +
-      `algorithms x {hex,base64} = ${n} values + the self-verifying test harness\n\n` +
-      'STAGING candidate — NOT used by QA until promoted and committed:\n' +
-      '  1. Review/revalidate it.\n' +
-      '  2. npm run qa:promote\n' +
-      '  3. git add qa-dist && git commit -m "update QA package"',
+    `  embedded ${testStrings.strings.length} strings x ${ALGORITHMS.length} ` +
+    `algorithms x {hex,base64} = ${n} values + the self-verifying test harness\n\n` +
+    'STAGING candidate — NOT used by QA until promoted and committed:\n' +
+    '  1. Review/revalidate it.\n' +
+    '  2. npm run qa:promote\n' +
+    '  3. git add qa-dist && git commit -m "update QA package"',
   );
 }
 
-if (has('--algorithms')) {
-  await buildAlgorithms(true);
-} else if (has('--extension')) {
-  await buildExtension(true);
-} else if (has('--qa')) {
+if (has('--qa')) {
   await buildQaPackage();
 } else if (watch) {
-  // Dev: unminified, rebuild both on change.
-  const ctxA = await esbuild.context({
-    entryPoints: ['src/algorithms.ts'],
-    bundle: true,
-    outfile: 'out/algorithms.js',
-    platform: 'node',
-    target: 'node20',
-    format: 'cjs',
-    minify: false,
-    sourcemap: true,
-    logLevel: 'info',
-  });
-  const ctxE = await esbuild.context({
+  // Dev: unminified single bundle, rebuild on change.
+  const ctx = await esbuild.context({
     entryPoints: ['src/extension.ts'],
     bundle: true,
     outfile: 'out/extension.js',
     platform: 'node',
-    target: 'node20',
+    target: 'node22',
     format: 'cjs',
-    external: ['vscode'],
-    plugins: [externalizeAlgorithms],
+    plugins: [vscodeShim],
     minify: false,
     sourcemap: true,
     logLevel: 'info',
   });
-  await ctxA.watch();
-  await ctxE.watch();
-  console.log('esbuild: watching (algorithms + extension)...');
+  await ctx.watch();
+  console.log('esbuild: watching (single bundled extension)...');
 } else {
-  // Default = full product build: trusted component, then the extension.
-  await buildAlgorithms(true);
+  // Default and --extension: the one shipped, minified bundle.
   await buildExtension(true);
 }

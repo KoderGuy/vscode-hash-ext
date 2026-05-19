@@ -1,5 +1,4 @@
 import * as vscode from 'vscode';
-import * as crypto from 'crypto';
 import {
   ALGORITHMS,
   TRANSCODERS,
@@ -8,6 +7,11 @@ import {
   DigestEncoding,
   computeDigest,
 } from './algorithms';
+
+// Re-export the pure logic so the single bundled extension.js exposes it as
+// named exports. The committed QA package require()s this file (with vscode
+// shimmed) and certifies these exact bundled bytes — no separate QA copy.
+export { ALGORITHMS, TRANSCODERS, computeDigest } from './algorithms';
 
 interface HashConfig {
   encoding: DigestEncoding;
@@ -82,18 +86,10 @@ async function getInputText(cfg: HashConfig): Promise<string | null> {
   return text;
 }
 
-const AVAILABLE_HASHES = new Set(crypto.getHashes());
-
 async function runHash(algo: HashAlgo): Promise<void> {
   try {
-    if (!AVAILABLE_HASHES.has(algo.cryptoName)) {
-      vscode.window.showErrorMessage(
-        `Hash & Transcode: ${algo.label} is not available in this editor's ` +
-          `Node/OpenSSL build (OpenSSL ${process.versions.openssl}).`,
-      );
-      return;
-    }
-
+    // Every algorithm is bundled (@noble/hashes), so all are always
+    // available regardless of the editor's runtime — no availability filter.
     const cfg = getConfig();
     const text = await getInputText(cfg);
     if (text === null) {
@@ -116,8 +112,7 @@ async function runHash(algo: HashAlgo): Promise<void> {
     }
   } catch (err) {
     vscode.window.showErrorMessage(
-      `Hash & Transcode: ${algo.label} failed: ${
-        err instanceof Error ? err.message : String(err)
+      `Hash & Transcode: ${algo.label} failed: ${err instanceof Error ? err.message : String(err)
       }`,
     );
   }
@@ -136,8 +131,7 @@ async function runTranscode(t: Transcoder): Promise<void> {
       result = t.run(text);
     } catch (e) {
       vscode.window.showErrorMessage(
-        `Hash & Transcode: ${t.label} ${t.direction} failed: ${
-          e instanceof Error ? e.message : String(e)
+        `Hash & Transcode: ${t.label} ${t.direction} failed: ${e instanceof Error ? e.message : String(e)
         }`,
       );
       return; // clipboard untouched
@@ -152,20 +146,15 @@ async function runTranscode(t: Transcoder): Promise<void> {
     }
   } catch (err) {
     vscode.window.showErrorMessage(
-      `Hash & Transcode: ${t.label} failed: ${
-        err instanceof Error ? err.message : String(err)
+      `Hash & Transcode: ${t.label} failed: ${err instanceof Error ? err.message : String(err)
       }`,
     );
   }
 }
 
 async function pickHash(): Promise<void> {
-  const secure = ALGORITHMS.filter(
-    (a) => !a.legacy && AVAILABLE_HASHES.has(a.cryptoName),
-  );
-  const legacy = ALGORITHMS.filter(
-    (a) => a.legacy && AVAILABLE_HASHES.has(a.cryptoName),
-  );
+  const secure = ALGORITHMS.filter((a) => !a.legacy);
+  const legacy = ALGORITHMS.filter((a) => a.legacy);
 
   type Item = vscode.QuickPickItem & { algo?: HashAlgo };
   const items: Item[] = [];

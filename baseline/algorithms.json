@@ -14,7 +14,6 @@
     { "id": "sha224", "cryptoName": "sha224", "label": "SHA-224", "legacy": false },
     { "id": "sha512_224", "cryptoName": "sha512-224", "label": "SHA-512/224", "legacy": false },
     { "id": "ripemd160", "cryptoName": "ripemd160", "label": "RIPEMD-160", "legacy": false },
-    { "id": "sm3", "cryptoName": "sm3", "label": "SM3", "legacy": false },
     { "id": "sha1", "cryptoName": "sha1", "label": "SHA-1", "legacy": true },
     { "id": "md5", "cryptoName": "md5", "label": "MD5", "legacy": true }
   ]

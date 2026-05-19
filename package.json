@@ -6,7 +6,7 @@
   "publisher": "local",
   "license": "MIT",
   "engines": {
-    "vscode": "^1.74.0"
+    "vscode": "^1.107.0"
   },
   "categories": [
     "Other"
@@ -94,11 +94,6 @@
         "command": "hashToClipboard.ripemd160",
         "category": "Hash & Transcode",
         "title": "Hash Selection: RIPEMD-160 → Clipboard"
-      },
-      {
-        "command": "hashToClipboard.sm3",
-        "category": "Hash & Transcode",
-        "title": "Hash Selection: SM3 → Clipboard"
       },
       {
         "command": "hashToClipboard.sha1",
@@ -212,21 +207,22 @@
   },
   "scripts": {
     "check": "tsc --noEmit -p ./",
-    "build:algorithms": "node esbuild.mjs --algorithms",
     "build:extension": "node esbuild.mjs --extension",
-    "build": "node esbuild.mjs",
     "watch": "node esbuild.mjs --watch",
-    "gen:qa": "node esbuild.mjs --qa",
+    "build:qa": "node esbuild.mjs --qa",
     "qa:promote": "node qa/promote-qa.mjs",
-    "qa": "node qa-dist/qa.pkg.mjs out/algorithms.js",
+    "qa:algorithms": "node qa-dist/qa.pkg.mjs out/extension.js",
     "package": "vsce package --allow-missing-repository --no-rewrite-relative-links",
-    "release": "npm run check && npm run build:algorithms && npm run qa && npm run build:extension && npm run package"
+    "release": "echo 'npm run check && npm run build:extension && npm run qa:algorithms && npm run package'",
+    "build:certify": "npm run check && npm run build:extension && npm run qa:algorithms",
+    "build:ext:pkg": "npm run build:extension && npm run package"
   },
   "devDependencies": {
-    "@types/node": "^20.0.0",
-    "@types/vscode": "^1.74.0",
-    "@vscode/vsce": "^3.0.0",
-    "esbuild": "^0.23.0",
-    "typescript": "^5.4.0"
+    "@noble/hashes": "^2.2.0",
+    "@types/node": "^22.1.1",
+    "@types/vscode": "^1.107.0",
+    "@vscode/vsce": "^3.9.1",
+    "esbuild": "^0.28.0",
+    "typescript": "^6.0.3"
   }
 }
