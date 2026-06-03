@@ -3,7 +3,11 @@
   "displayName": "Hash & Transcode to Clipboard",
   "description": "Hash the selected text (16 algorithms incl. SHA-2/SHA-3/BLAKE2 + legacy SHA-1/MD5) or transcode it (Base64, Base64URL, URL, Hex, HTML entities) and copy the result to the clipboard. Every operation is its own bindable command. Works in VSCode, Cursor, and Antigravity.",
   "version": "0.0.1",
-  "publisher": "local",
+  "publisher": "KoderGuy",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/koderguy/vscode-hash-ext.git"
+  },
   "license": "MIT",
   "engines": {
     "vscode": "^1.107.0"
