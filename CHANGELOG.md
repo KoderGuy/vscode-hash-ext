@@ -4,46 +4,45 @@
 
 Initial release.
 
-- 16 hash algorithms, each its own bindable command: SHA-256, SHA-384,
+- **15 hash algorithms**, each its own bindable command: SHA-256, SHA-384,
   SHA-512, SHA-512/256, SHA3-224, SHA3-256, SHA3-384, SHA3-512, BLAKE2b-512,
-  BLAKE2s-256, SHA-224, SHA-512/224, RIPEMD-160, SM3, plus legacy SHA-1 & MD5.
-- 5 reversible transcoder pairs, each its own bindable command: Base64,
-  Base64URL, URL (percent), Hex, HTML entities.
-- "Pick" commands for hashing, encoding, and decoding via QuickPick.
+  BLAKE2s-256, SHA-224, SHA-512/224, RIPEMD-160, plus legacy SHA-1 & MD5.
+- **5 reversible transcoder pairs**, each its own bindable command: Base64,
+  Base64URL, URL (percent), Hex, HTML entities (encode + decode).
+- **Pick** commands for hashing, encoding, and decoding via QuickPick.
 - Result is copied to the clipboard; the document is never modified.
-- Configurable digest encoding (hex/base64/base64url), uppercase, multi-
-  selection behavior, and notification toggle.
+- Configurable digest encoding (hex/base64/base64url), uppercase, multi-selection
+  behavior (primary/concatenate), and a notification toggle.
+- Command Palette declutter: specific commands are hidden by default and revealed
+  on demand via **Show/Hide Command in Palette…** (or the
+  `hashToClipboard.visibleCommands` setting). Every command is keybindable
+  regardless of palette visibility.
 - Prompts for word-under-cursor vs entire-file when nothing is selected.
-- Zero runtime dependencies; minified single-file bundle.
-- Compatible with VSCode, Cursor, and Antigravity (engine `^1.74.0`).
-- **Certify-the-component model.** One trusted file `out/algorithms.js` is
-  built from the single source `src/algorithms.ts`; QA is launched with its
-  path and certifies that exact file (prints its `sha256` + `CERTIFIED`
-  verdict). The extension is built to **load the same file**
-  (`out/extension.js` → `require("./algorithms.js")`); the `.vsix` ships both
-  and the shipped `algorithms.js` is byte-identical to the certified one —
-  verifiable provenance, no separate QA copy.
+- Hash implementations bundled from `@noble/hashes` (pure-JS) — identical output
+  across hosts, independent of the editor's Node/OpenSSL build.
+- **Zero runtime dependencies**; single minified bundle (`out/extension.js`).
+- Compatible with VSCode, Cursor, and Antigravity (engine `^1.107.0`).
+
+### Build certification
+
+- **Certify-the-bundle model.** The single shipped artifact `out/extension.js`
+  (algorithms bundled in) is certified directly: `npm run qa:algorithms` loads it
+  under a `vscode` stub and verifies its exported
+  `computeDigest` / `ALGORITHMS` / `TRANSCODERS` against an audited baseline,
+  printing the file's `sha256` and a `CERTIFIED` verdict. Certified bytes equal
+  shipped bytes.
 - QA is a **single self-contained, source-controlled control**
-  (`qa-dist/qa.pkg.mjs`): esbuild inlines the oracle-computed baseline (224
-  values) + harness + audited test cases. It depends on **nothing** but the
-  Node runtime and the file it certifies — no git, network, other repo file,
-  or third-party package. Authority is by **provenance** (reviewed, promoted,
-  committed → fetched from source control to run), not runtime self-checks,
-  so results cannot be externally influenced. KAT-validated oracle, baseline-
-  integrity guard, component certification, transcoder round-trips; verbose
-  per-test stdout; non-zero exit on any failure.
-- QA **never stops mid-run**: oracle/baseline failures are WARNINGs (not
-  aborts) and every thrown call (computeDigest/oracle/transcoder) is caught
-  and recorded — all 6 sections always execute. New **coverage/gap-analysis**
-  section itemizes UNTESTED / MISSING / BROKEN / covered per algorithm. The
-  SUMMARY ends with a consolidated **TO-DO list of every failure**, so one
-  run fully defines the required work.
-- The control declares its OWN algorithm set + inputs in audited committed
-  data (`baseline/algorithms.json`, `baseline/test-strings.json`); `gen:qa`
-  builds from those + the crypto oracle only — no `src/`/`out/` read, no
-  prior build needed (removed the circular "control derived from the code it
-  audits" dependency). A divergent code-under-test FAILs the registry check.
-- Rebuilding the package is deliberate and revalidated: `npm run gen:qa`
-  (gitignored staging) → review/revalidate → `npm run qa:promote` →
-  `git add qa-dist && git commit`. `npm run release` runs the full trusted
-  pipeline (check → build:algorithms → qa → build:extension → package).
+  (`qa-dist/qa.pkg.mjs`): the oracle-computed baseline (7 strings × 15 algorithms
+  × {hex, base64} = 210 values) + harness + audited test cases, inlined. It
+  depends only on the Node runtime and the file it certifies; authority is by
+  **provenance** (reviewed → promoted → committed → run from source control).
+- QA **never stops mid-run** — all six sections always execute (oracle/KAT,
+  baseline integrity, coverage gap-analysis, component certification, transcoder
+  round-trips, malformed-input rejection) — and the summary ends with a
+  consolidated TO-DO list of every failure. Non-zero exit on any failure.
+- The control declares its own algorithm set and inputs in audited committed data
+  (`baseline/algorithms.json`, `baseline/test-strings.json`); `npm run build:qa`
+  builds the staging package from those plus the crypto oracle only. Rebuilding is
+  deliberate: `build:qa` → review → `qa:promote` → `git commit`.
+
+See [QA.md](QA.md) for the full certification process.
